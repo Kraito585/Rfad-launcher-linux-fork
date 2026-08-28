@@ -3,10 +3,12 @@ import type { DefineComponent, SlotsType } from 'vue'
 type IslandComponent<T extends DefineComponent> = T & DefineComponent<{}, {refresh: () => Promise<void>}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, SlotsType<{ fallback: { error: unknown } }>>
 interface _GlobalComponents {
       'Button': typeof import("../components/Button.vue")['default']
+    'CdnDonationModal': typeof import("../components/CdnDonationModal.vue")['default']
     'CircleButton': typeof import("../components/CircleButton.vue")['default']
     'DirErrorMessage': typeof import("../components/DirErrorMessage.vue")['default']
     'DownloadingMessage': typeof import("../components/DownloadingMessage.vue")['default']
     'DropdownButton': typeof import("../components/DropdownButton.vue")['default']
+    'FirstInstallCdnModal': typeof import("../components/FirstInstallCdnModal.vue")['default']
     'GoogleDriveDirError': typeof import("../components/GoogleDriveDirError.vue")['default']
     'LauncherUpdatingMessage': typeof import("../components/LauncherUpdatingMessage.vue")['default']
     'ModComponent': typeof import("../components/ModComponent.vue")['default']
@@ -61,10 +63,12 @@ interface _GlobalComponents {
     'NuxtIsland': typeof import("../node_modules/nuxt/dist/app/components/nuxt-island")['default']
     'NuxtRouteAnnouncer': IslandComponent<typeof import("../node_modules/nuxt/dist/app/components/server-placeholder")['default']>
       'LazyButton': typeof import("../components/Button.vue")['default']
+    'LazyCdnDonationModal': typeof import("../components/CdnDonationModal.vue")['default']
     'LazyCircleButton': typeof import("../components/CircleButton.vue")['default']
     'LazyDirErrorMessage': typeof import("../components/DirErrorMessage.vue")['default']
     'LazyDownloadingMessage': typeof import("../components/DownloadingMessage.vue")['default']
     'LazyDropdownButton': typeof import("../components/DropdownButton.vue")['default']
+    'LazyFirstInstallCdnModal': typeof import("../components/FirstInstallCdnModal.vue")['default']
     'LazyGoogleDriveDirError': typeof import("../components/GoogleDriveDirError.vue")['default']
     'LazyLauncherUpdatingMessage': typeof import("../components/LauncherUpdatingMessage.vue")['default']
     'LazyModComponent': typeof import("../components/ModComponent.vue")['default']
@@ -125,10 +129,12 @@ declare module 'vue' {
 }
 
 export const Button: typeof import("../components/Button.vue")['default']
+export const CdnDonationModal: typeof import("../components/CdnDonationModal.vue")['default']
 export const CircleButton: typeof import("../components/CircleButton.vue")['default']
 export const DirErrorMessage: typeof import("../components/DirErrorMessage.vue")['default']
 export const DownloadingMessage: typeof import("../components/DownloadingMessage.vue")['default']
 export const DropdownButton: typeof import("../components/DropdownButton.vue")['default']
+export const FirstInstallCdnModal: typeof import("../components/FirstInstallCdnModal.vue")['default']
 export const GoogleDriveDirError: typeof import("../components/GoogleDriveDirError.vue")['default']
 export const LauncherUpdatingMessage: typeof import("../components/LauncherUpdatingMessage.vue")['default']
 export const ModComponent: typeof import("../components/ModComponent.vue")['default']
@@ -183,10 +189,12 @@ export const Body: typeof import("../node_modules/nuxt/dist/head/runtime/compone
 export const NuxtIsland: typeof import("../node_modules/nuxt/dist/app/components/nuxt-island")['default']
 export const NuxtRouteAnnouncer: IslandComponent<typeof import("../node_modules/nuxt/dist/app/components/server-placeholder")['default']>
 export const LazyButton: typeof import("../components/Button.vue")['default']
+export const LazyCdnDonationModal: typeof import("../components/CdnDonationModal.vue")['default']
 export const LazyCircleButton: typeof import("../components/CircleButton.vue")['default']
 export const LazyDirErrorMessage: typeof import("../components/DirErrorMessage.vue")['default']
 export const LazyDownloadingMessage: typeof import("../components/DownloadingMessage.vue")['default']
 export const LazyDropdownButton: typeof import("../components/DropdownButton.vue")['default']
+export const LazyFirstInstallCdnModal: typeof import("../components/FirstInstallCdnModal.vue")['default']
 export const LazyGoogleDriveDirError: typeof import("../components/GoogleDriveDirError.vue")['default']
 export const LazyLauncherUpdatingMessage: typeof import("../components/LauncherUpdatingMessage.vue")['default']
 export const LazyModComponent: typeof import("../components/ModComponent.vue")['default']

@@ -4,6 +4,7 @@ import { EventsOn, BrowserOpenURL } from '~/wailsjs/runtime/runtime';
 
 import config from '~/config';
 import type { PatchComponentProps } from '~/components/PatchComponent.vue';
+import FirstInstallCdnModal from '~/components/FirstInstallCdnModal.vue';
 
 // ===== Состояния для модалки установки =====
 const showInstallModal = ref(false);
@@ -40,6 +41,10 @@ const selectInstallDir = async () => {
   const path = await window.go.main.App.SelectDirectory();
   if (path) installPath.value = path;
 };
+
+// ===== Состояния для модалки CDN =====
+const showFirstInstallCdnModal = ref(false);
+const currentCdnState = ref(false);
 
 const startInstall = async () => {
   if (!installerPath.value || !installPath.value) {
@@ -324,13 +329,9 @@ const update = async (isFirstStart: boolean = false) => {
   unlistenUpdateStatus();
 };
 
-const processButtonClick = async () => {
-  console.log('processButtonClick called, needsFirstInstall=', needsFirstInstall.value);
-  if (!isPathExist.value) {
-    showInstallModal.value = true;
-    return;
-  }
-  if (needsFirstInstall.value) {
+const startFirstInstallFlow = async () => {
+  showFirstInstallCdnModal.value = false;
+
   isGameStarting.value = true;
   updateStarted.value = true;
   updateDownloadStarted.value = true;
@@ -346,8 +347,32 @@ const processButtonClick = async () => {
     updateStarted.value = false;
     updateDownloadStarted.value = false;
   }
-  return;
-}
+};
+
+// Обновленный обработчик главной кнопки
+const processButtonClick = async () => {
+  console.log('processButtonClick called, needsFirstInstall=', needsFirstInstall.value);
+  if (!isPathExist.value) {
+    showInstallModal.value = true;
+    return;
+  }
+  
+  if (needsFirstInstall.value) {
+    try {
+      // Получаем актуальное состояние CDN из бэкенда перед показом модалки
+      const settingsData = await window.go.main.App.GetGameSettings();
+      const settings = typeof settingsData === 'string' ? JSON.parse(settingsData) : settingsData;
+      currentCdnState.value = settings.cdn || false;
+    } catch (e) {
+      console.error('Не удалось получить настройки CDN:', e);
+      currentCdnState.value = false;
+    }
+    
+    // Показываем модалку вместо моментального старта
+    showFirstInstallCdnModal.value = true;
+    return;
+  }
+  
   await startGame();
 };
 
@@ -611,6 +636,14 @@ onMounted(async () => {
     <img alt="Matrona" src="assets/image/Matrona.webp" class="matrona z-10" />
     <Transition name="fade-modal">
       <SettingsModal v-if="isSettingsOpen" @close="closeSettings" />
+    </Transition>
+    <Transition name="fade-modal">
+      <FirstInstallCdnModal 
+        v-if="showFirstInstallCdnModal" 
+        :initial-cdn-state="currentCdnState"
+        @toggle-cdn="(val) => currentCdnState = val"
+        @close="startFirstInstallFlow" 
+      />
     </Transition>
   </div>
 </template>

@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, watch } from 'vue';
 import MessageBox from '~/components/base/MessageBox.vue';
 import CloseIcon from '~/components/icons/X.vue';
 import Cog from '~/components/icons/Cog.vue';
+import CdnDonationModal from '~/components/CdnDonationModal.vue';
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -10,6 +11,7 @@ const emit = defineEmits<{
 
 const modalRef = ref<HTMLElement | null>(null);
 const isLoading = ref(true);
+const showDonationModal = ref(false);
 
 // Дефолтное значение для сброса
 const DEFAULT_WINE_OVERRIDES = 'concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n';
@@ -67,6 +69,9 @@ watch(() => settings.value.cdn, async (newCdn) => {
 const toggleSetting = async (key: 'mangoHud' | 'fsr' | 'shaderCache' | 'hdr' | 'steamFix' | 'cdn') => {
   settings.value[key] = !settings.value[key];
   await sendToBackend(key, settings.value[key]);
+  if (key === 'cdn' && settings.value.cdn) {
+    showDonationModal.value = true;
+  }
 };
 
 const saveInputSetting = async (key: 'fpsLimit' | 'wineDllOverrides') => {
@@ -261,6 +266,10 @@ const sendToBackend = async (key: string, value: boolean | string) => {
       </div>
     </MessageBox>
   </div>
+  <CdnDonationModal 
+    v-if="showDonationModal" 
+    @close="showDonationModal = false" 
+  />
 </template>
 
 <style scoped>

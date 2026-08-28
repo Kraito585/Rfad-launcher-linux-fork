@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"rfad-launcher-linux/src-wails/core"
 	"runtime"
-	"strings"
 	"time"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -273,16 +272,17 @@ func (a *App) ShowMessageDialog(title, message string) error {
 }
 
 func (a *App) GetFirstInstallStatus() bool {
-	configFile := filepath.Join(GetGameRoot(), "launcher_config.txt")
-	_, err := os.Open(configFile)
+	// Если GetGameRoot() находится в другом пакете, поправьте вызов (например, core.GetGameRoot())
+	gameRoot := GetGameRoot()
+
+	cfg, err := core.GetLauncherConfig(gameRoot)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return true
 		}
-		return false
+		return true
 	}
-
-	return false
+	return !cfg.LinuxPatchComplete
 }
 
 func (a *App) InstallGame(installerPath, installPath string) error {
@@ -307,48 +307,52 @@ func (a *App) InstallGame(installerPath, installPath string) error {
 	return nil
 }
 
-func (a *App) FirstInstall() error {
-	slog.Info("FirstInstall called")
+func (a *App) FirstInstall() error { ///Патчи совместимости для Linux одноразовая установка
+	slog.Info("Начало полного процесса установки (Загрузка + Распаковка)")
+	gameRoot := GetGameRoot()
+	creds := getCreds()
 
-	err := core.FirstInstall(a.ctx, "gdrive", GetGameRoot(), getCreds(), func(p float64, speed float64, msg string) {
+	// 1. Сигнализируем фронтенду, что началась загрузка
+	wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "download-started"})
 
-		msgLower := strings.ToLower(msg)
-		isUnpacking := strings.Contains(msgLower, "распаков") ||
-			strings.Contains(msgLower, "unpack") ||
-			strings.Contains(msgLower, "extract") ||
-			strings.Contains(msgLower, "патч")
-
-		if isUnpacking {
-			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "download-finished"})
-			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-started"})
-
-			wailsRuntime.EventsEmit(a.ctx, "unpack-progress", map[string]interface{}{
-				"percentage": p * 100,
-			})
-		} else {
-			// Передаем пришедшую скорость
-			wailsRuntime.EventsEmit(a.ctx, "download-progress", map[string]interface{}{
-				"fileName":         msg,
-				"percentage":       p * 100,
-				"speedBytesPerSec": speed,
-			})
-		}
-
-		// Для обратной совместимости
-		wailsRuntime.EventsEmit(a.ctx, "install-progress", map[string]interface{}{
-			"percentage": p,
-			"message":    msg,
+	// ЭТАП ЗАГРУЗКИ
+	downloadCb := func(p float64, speed float64, msg string) {
+		wailsRuntime.EventsEmit(a.ctx, "download-progress", map[string]interface{}{
+			"fileName":         msg,
+			"percentage":       p * 100, // Убедитесь, что здесь приходит число от 0 до 100 (или от 0 до 1, умноженное на 100)
+			"speedBytesPerSec": speed,
 		})
-	})
+	}
 
-	if err != nil {
-		slog.Error("FirstInstall failed", "error", err)
+	if err := core.FirstDownload(a.ctx, gameRoot, creds, downloadCb); err != nil {
+		slog.Error("Ошибка при скачивании", "error", err)
 		return err
 	}
 
+	// Сигнализируем, что загрузка окончена
+	wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "download-finished"})
+
+	// 2. ЭТАП РАСПАКОВКИ
+	wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-started"})
+
+	unpackCb := func(p float64, msg string) {
+		wailsRuntime.EventsEmit(a.ctx, "unpack-progress", map[string]interface{}{
+			"percentage": p * 100,
+		})
+	}
+
+	if err := core.FirstInstall(a.ctx, gameRoot, creds, unpackCb); err != nil {
+		slog.Error("Ошибка при распаковке", "error", err)
+		return err
+	}
+
+	// Сигнализируем, что распаковка завершена
 	wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-finished"})
+
+	slog.Info("Установка успешно завершена!")
 	return nil
 }
+
 func GetGameRoot() string {
 	if testRoot := os.Getenv("RFAD_TEST_GAME_ROOT"); testRoot != "" {
 		slog.Info(testRoot)

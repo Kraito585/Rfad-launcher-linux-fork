@@ -228,33 +228,36 @@ func StartMO2(ctx context.Context, gameRoot string, scriptContent, mo2Args strin
 	return nil
 }
 
-func FirstInstall(ctx context.Context, source string, gameRoot string, creds []byte, progressCb func(float64, float64, string)) error {
+func FirstInstall(ctx context.Context, gameRoot string, creds []byte, progressCb func(float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	statusFile := filepath.Join(destDir, "install_status.txt")
+
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return fmt.Errorf("не удалось создать папку download: %w", err)
 	}
+
 	statusF, err := os.OpenFile(statusFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("не удалось открыть файл статуса: %w", err)
 	}
 	defer statusF.Close()
 
+	// Исправлено: теперь writeStatus корректно записывает ключ
 	writeStatus := func(key string) {
-		_, _ = statusF.WriteString(fmt.Sprintf("complete %s %s\n", key))
+		_, _ = statusF.WriteString(fmt.Sprintf("complete %s\n", key))
 	}
 
 	alreadyInstalled := func(key string) bool {
+		// Убедитесь, что CheckInsatllStatus корректно объявлена в вашем проекте
 		ok, _ := CheckInsatllStatus(destDir, key)
 		return ok
 	}
 
+	// Чистый коллбэк для распаковки (принимает только проценты и сообщение)
 	unpackCb := func(p float64, msg string) {
-		progressCb(p, 0, "Распаковка: "+msg)
-	}
-
-	if err := firstDownload(ctx, source, gameRoot, creds, progressCb); err != nil {
-		return fmt.Errorf("Ошибка загрузки файлов: %w", err)
+		if progressCb != nil {
+			progressCb(p, "Распаковка: "+msg)
+		}
 	}
 
 	if !alreadyInstalled("InstallGEProton") {
@@ -290,67 +293,66 @@ func FirstInstall(ctx context.Context, source string, gameRoot string, creds []b
 	if !alreadyInstalled("RestoreDisabledSteamDrm") {
 		err := steam_drm_switch.ToggleSteamDRM(ctx, gameRoot, false, unpackCb)
 		if err != nil {
-			return fmt.Errorf("Не удалось востоновить файлы запуска игры: %w", err)
+			return fmt.Errorf("Не удалось восстановить файлы запуска игры: %w", err)
 		}
-		slog.Info("Востоновления файлов запуска закончено")
+		slog.Info("Восстановление файлов запуска закончено")
 		writeStatus("RestoreDisabledSteamDrm")
 	}
 
-	configFile := filepath.Join(gameRoot, "launcher_config.txt")
-	configF, err := os.OpenFile(configFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		slog.Warn("не удалось открыть файл статуса: %w", err)
-	}
-	defer configF.Close()
-
-	utils.SetOneSetting(gameRoot, "linux-patch-complite", "true")
-	utils.SetOneSetting(gameRoot, "MangoHud:", "false")
-	utils.SetOneSetting(gameRoot, "FSR:", "false")
-	utils.SetOneSetting(gameRoot, "ShaderCache:", "true")
-	utils.SetOneSetting(gameRoot, "HDR:", "false")
-	utils.SetOneSetting(gameRoot, "SteamFix:", "false")
-	utils.SetOneSetting(gameRoot, "FpsLimit:", " ")
-	utils.SetOneSetting(gameRoot, "CDN:", "false")
-	utils.SetOneSetting(gameRoot, "WineDllOverrides:", "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n")
-	utils.SetOneSetting(gameRoot, "GrafikMod:", "Нету")
-	utils.SetOneSetting(gameRoot, "FsrLvl:", "95")
+	utils.SetOneSetting(gameRoot, "linux-patch-complite:", true)
 
 	return nil
 }
 
-func firstDownload(ctx context.Context, source string, gameRoot string, creds []byte, progressCb func(float64, float64, string)) error {
+func FirstDownload(ctx context.Context, gameRoot string, creds []byte, progressCb func(float64, float64, string)) error {
 	slog.Info("FirstDownload: gameRoot = " + gameRoot)
 
-	switch source {
-	case "cdn":
-
-		downloader.DownloadUpdate(ctx, gameRoot, "cdn", creds, false, progressCb)
-
-		downloader.DownloadPrefix(ctx, gameRoot, "cdn", creds, false, progressCb)
-
-		downloader.DownloadSteamfix(ctx, gameRoot, "cdn", creds, false, progressCb)
-
-		downloader.DownloadCommunityShaders(ctx, gameRoot, false, progressCb)
-
-	case "gdrive":
-
-		//Прорисывать Download Type в функции downloader не обязательно функции загрузки работают исключением if type == "cdn" если значение != он сам выберит google drive
-		downloader.DownloadUpdate(ctx, gameRoot, "gdrive", creds, false, progressCb)
-
-		downloader.DownloadPrefix(ctx, gameRoot, "gdrive", creds, false, progressCb)
-
-		downloader.DownloadSteamfix(ctx, gameRoot, "gdrive", creds, false, progressCb)
-
-	default:
-		return fmt.Errorf("неизвестный источник: %s", source)
+	// 1. Получаем настройки напрямую из конфига
+	cfg, err := GetLauncherConfig(gameRoot)
+	if err != nil {
+		slog.Warn("Не удалось прочитать конфиг для firstDownload, используем загрузку по умолчанию (GDrive)", "err", err)
+		if cfg == nil {
+			cfg = &LauncherConfig{CDN: false}
+		}
 	}
 
-	downloader.DownloadGEProton(ctx, gameRoot, false, progressCb)
+	// 2. Определяем тип загрузки
+	downloadType := "gdrive"
+	if cfg.CDN {
+		downloadType = "cdn"
+	}
 
-	downloader.DownloadConfig(ctx, gameRoot, false)
+	// 3. Вызываем функции загрузки (передаем им переменную downloadType)
+	if err := downloader.DownloadUpdate(ctx, gameRoot, downloadType, creds, false, progressCb); err != nil {
+		return err
+	}
+
+	if err := downloader.DownloadPrefix(ctx, gameRoot, downloadType, creds, false, progressCb); err != nil {
+		return err
+	}
+
+	if err := downloader.DownloadSteamfix(ctx, gameRoot, downloadType, creds, false, progressCb); err != nil {
+		return err
+	}
+
+	// Community Shaders качаем только если выбран CDN
+	if cfg.CDN {
+		if err := downloader.DownloadCommunityShaders(ctx, gameRoot, false, progressCb); err != nil {
+			return err
+		}
+	}
+
+	// Эти файлы скачиваются всегда одинаково
+	if err := downloader.DownloadGEProton(ctx, gameRoot, false, progressCb); err != nil {
+		return err
+	}
+
+	if err := downloader.DownloadConfig(ctx, gameRoot, false); err != nil {
+		return err
+	}
+
 	return nil
 }
-
 func IsPathExist(ctx context.Context, gameRoot string) (bool, error) {
 	filePath := filepath.Join(gameRoot, "MO2", "ModOrganizer.exe")
 	_, err := os.Stat(filePath)
@@ -567,6 +569,18 @@ Loop:
 	_ = os.RemoveAll(filepath.Join(installPath, "tmp"))
 
 	saveDisabledGameFiles(installPath)
+
+	utils.SetOneSetting(installPath, "linux-patch-complite", "false")
+	utils.SetOneSetting(installPath, "MangoHud:", "false")
+	utils.SetOneSetting(installPath, "FSR:", "false")
+	utils.SetOneSetting(installPath, "ShaderCache:", "true")
+	utils.SetOneSetting(installPath, "HDR:", "false")
+	utils.SetOneSetting(installPath, "SteamFix:", "false")
+	utils.SetOneSetting(installPath, "FpsLimit:", " ")
+	utils.SetOneSetting(installPath, "CDN:", "false")
+	utils.SetOneSetting(installPath, "WineDllOverrides:", "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n")
+	utils.SetOneSetting(installPath, "GrafikMod:", "Нету")
+	utils.SetOneSetting(installPath, "FsrLvl:", "95")
 
 	if progressCb != nil {
 		progressCb(1.0, "Установка завершена!")
