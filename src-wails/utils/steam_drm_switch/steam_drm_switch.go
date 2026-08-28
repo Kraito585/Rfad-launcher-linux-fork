@@ -3,92 +3,90 @@ package steam_drm_switch
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"rfad-launcher-linux/src-wails/utils"
 )
 
-func ToggleSteamDRM(ctx context.Context, gameRoot string, enable bool, progressCb func(float64, string)) error {
-	// Списки файлов для разных состояний
-	drmOnFiles := []string{
-		"SkyrimSE.exe",
-		"steam_api64.dll",
-	}
-	drmOffFiles := []string{
-		"SkyrimSE.exe",
-		"steam_api64.dll",
-		"steam_api64",
-	}
+func ToggleSteamDRM(ctx context.Context, gameRoot string, enable bool, unpackCb func(float64, string)) error {
+	drmOnFiles := []string{"SkyrimSE.exe", "steam_api64.dll"}
+	drmOffFiles := []string{"SkyrimSE.exe", "steam_api64.dll", "steam_api64"}
 
 	steamDrmDir := filepath.Join(gameRoot, "disabledGameFiles", "SteamDRM")
 	dirOn := filepath.Join(steamDrmDir, "on")
 	dirOff := filepath.Join(steamDrmDir, "off")
 
-	os.MkdirAll(dirOn, 0755)
-	os.MkdirAll(dirOff, 0755)
-
-	// Подсчитываем общее количество операций для точного прогресс-бара
-	totalOperations := len(drmOnFiles) + len(drmOffFiles)
-	currentOp := 0
-
-	// Вспомогательная функция для перемещения с вызовом колбэка
-	moveFiles := func(files []string, srcDir, destDir string) {
-		for _, f := range files {
-			// Проверка отмены контекста
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-
-			currentOp++
-			percent := float64(currentOp) / float64(totalOperations)
-
-			src := filepath.Join(srcDir, f)
-			dst := filepath.Join(destDir, f)
-
-			if _, err := os.Stat(src); err == nil {
-				os.RemoveAll(dst)
-				if err := os.Rename(src, dst); err == nil {
-					if progressCb != nil {
-						progressCb(percent, fmt.Sprintf("Перемещен файл: %s", f))
-					}
-				} else {
-					if progressCb != nil {
-						progressCb(percent, fmt.Sprintf("Ошибка перемещения: %s", f))
-					}
-				}
-			} else {
-				if progressCb != nil {
-					progressCb(percent, fmt.Sprintf("Пропущен файл (не найден): %s", f))
-				}
-			}
-		}
+	// 1. Очищаем корень игры от возможных старых файлов
+	allFiles := []string{"SkyrimSE.exe", "steam_api64.dll", "steam_api64"}
+	for _, f := range allFiles {
+		os.RemoveAll(filepath.Join(gameRoot, f))
 	}
+
+	// 2. Выбираем источник для копирования
+	var sourceDir string
+	var filesToCopy []string
 
 	if enable {
-		if progressCb != nil {
-			progressCb(0.0, "Включение Steam DRM...")
+		if unpackCb != nil {
+			unpackCb(0.0, "Включение Steam DRM...")
 		}
-		moveFiles(drmOffFiles, gameRoot, dirOff)
-		moveFiles(drmOnFiles, dirOn, gameRoot)
+		sourceDir = dirOn
+		filesToCopy = drmOnFiles
 	} else {
-		if progressCb != nil {
-			progressCb(0.0, "Отключение Steam DRM...")
+		if unpackCb != nil {
+			unpackCb(0.0, "Отключение Steam DRM...")
 		}
-		moveFiles(drmOnFiles, gameRoot, dirOn)
-		moveFiles(drmOffFiles, dirOff, gameRoot)
+		sourceDir = dirOff
+		filesToCopy = drmOffFiles
 	}
 
-	// Финальный вызов прогресса
-	if progressCb != nil {
-		progressCb(1.0, "Обновление конфигурации...")
+	// 3. Копируем нужные файлы из хранилища в корень игры
+	totalOperations := len(filesToCopy)
+
+	for i, f := range filesToCopy {
+		// Проверка отмены контекста
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		src := filepath.Join(sourceDir, f)
+		dst := filepath.Join(gameRoot, f)
+		percent := float64(i+1) / float64(totalOperations)
+
+		// Проверяем, существует ли файл в хранилище ДО копирования
+		if _, err := os.Stat(src); os.IsNotExist(err) {
+			// Файла нет — просто пропускаем без паники и логов ошибки
+			if unpackCb != nil {
+				unpackCb(percent, fmt.Sprintf("Пропущен файл (не найден): %s", f))
+			}
+			continue
+		}
+
+		// Если файл есть — копируем
+		if err := utils.CopyPath(src, dst); err == nil {
+			if unpackCb != nil {
+				unpackCb(percent, fmt.Sprintf("Скопирован: %s", f))
+			}
+		} else {
+			if unpackCb != nil {
+				unpackCb(percent, fmt.Sprintf("Ошибка копирования: %s", f))
+			}
+			slog.Error("ошибка копирования DRM файла", "src", src, "err", err)
+		}
 	}
 
-	// Обновление конфигурационного файла (передаем строку)
+	// 4. Финальный вызов прогресса и запись в конфиг
+	if unpackCb != nil {
+		unpackCb(1.0, "Обновление конфигурации...")
+	}
+
 	valStr := "false"
 	if enable {
 		valStr = "true"
 	}
-	return utils.UpdateLauncherConfig(gameRoot, "SteamDRM", valStr)
+
+	return utils.SetOneSetting(gameRoot, "SteamFix:", valStr)
 }

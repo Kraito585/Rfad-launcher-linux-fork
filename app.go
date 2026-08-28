@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"rfad-launcher-linux/src-wails/core"
 	"runtime"
+	"strings"
 	"time"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -88,23 +90,46 @@ func (a *App) UpdateGameSettings(framerate int, voice string) error {
 
 func (a *App) Update() error {
 	slog.Info("Update called")
+
 	go func() {
+		// 1. Статус: загрузка началась
 		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "download-started"})
-		for i := 0; i <= 100; i += 10 {
+
+		// Имитация скачивания
+		for i := 0; i <= 100; i += 2 {
+			time.Sleep(50 * time.Millisecond) // Задержка для плавной анимации
+
+			// Генерируем случайную скорость от 15.0 до 45.0 МБ/сек
+			// rand.Float64() дает значение от 0.0 до 1.0
+			randomSpeedMB := 15.0 + (rand.Float64() * 30.0)
+			speedBytes := randomSpeedMB * 1024 * 1024
+
 			wailsRuntime.EventsEmit(a.ctx, "download-progress", map[string]interface{}{
-				"percentage":       float64(i) / 100.0,
-				"speedBytesPerSec": 1024 * 1024,
+				"fileName":         "update.zip", // Обязательное поле для фронтенда
+				"percentage":       float64(i),
+				"speedBytesPerSec": speedBytes, // Передаем плавающую скорость
 			})
 		}
+
+		// 2. Статус: загрузка завершена, начинаем распаковку
 		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "download-finished"})
+		time.Sleep(300 * time.Millisecond) // Пауза перед сменой статуса
+
 		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-started"})
-		for i := 0; i <= 100; i += 10 {
+
+		// Имитация распаковки (здесь скорость обычно не показывают)
+		for i := 0; i <= 100; i += 4 {
+			time.Sleep(60 * time.Millisecond)
+
 			wailsRuntime.EventsEmit(a.ctx, "unpack-progress", map[string]interface{}{
-				"percentage": float64(i) / 100.0,
+				"percentage": float64(i),
 			})
 		}
+
+		// 3. Статус: распаковка завершена
 		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-finished"})
 	}()
+
 	return nil
 }
 
@@ -284,19 +309,46 @@ func (a *App) InstallGame(installerPath, installPath string) error {
 
 func (a *App) FirstInstall() error {
 	slog.Info("FirstInstall called")
-	err := core.FirstInstall(a.ctx, "gdrive", GetGameRoot(), getCreds(), func(p float64, msg string) {
+
+	err := core.FirstInstall(a.ctx, "gdrive", GetGameRoot(), getCreds(), func(p float64, speed float64, msg string) {
+
+		msgLower := strings.ToLower(msg)
+		isUnpacking := strings.Contains(msgLower, "распаков") ||
+			strings.Contains(msgLower, "unpack") ||
+			strings.Contains(msgLower, "extract") ||
+			strings.Contains(msgLower, "патч")
+
+		if isUnpacking {
+			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "download-finished"})
+			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-started"})
+
+			wailsRuntime.EventsEmit(a.ctx, "unpack-progress", map[string]interface{}{
+				"percentage": p * 100,
+			})
+		} else {
+			// Передаем пришедшую скорость
+			wailsRuntime.EventsEmit(a.ctx, "download-progress", map[string]interface{}{
+				"fileName":         msg,
+				"percentage":       p * 100,
+				"speedBytesPerSec": speed,
+			})
+		}
+
+		// Для обратной совместимости
 		wailsRuntime.EventsEmit(a.ctx, "install-progress", map[string]interface{}{
 			"percentage": p,
 			"message":    msg,
 		})
 	})
+
 	if err != nil {
 		slog.Error("FirstInstall failed", "error", err)
 		return err
 	}
+
+	wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-finished"})
 	return nil
 }
-
 func GetGameRoot() string {
 	if testRoot := os.Getenv("RFAD_TEST_GAME_ROOT"); testRoot != "" {
 		slog.Info(testRoot)
@@ -349,28 +401,38 @@ func (a *App) relaunchToGameRoot(installPath string) error {
 	return nil
 }
 
-func (a *App) GetGameSettings() GameSettings {
-	return GameSettings{
-		MangoHud:         false,
-		Fsr:              false,
-		ShaderCache:      false,
-		Hdr:              false,
-		SteamFix:         false,
-		Cdn:              false,
-		FpsLimit:         "60",
-		WineDllOverrides: "",
-		GrafikMod:        "ENB",
-		FsrLvl:           "95",
+func (a *App) GetGameSettings() core.LauncherConfig {
+	gameRoot := GetGameRoot()
+
+	cfg, err := core.GetLauncherConfig(gameRoot)
+	if err != nil {
+		slog.Warn("Не удалось прочитать настройки для UI, используем дефолтные", "err", err)
+		if cfg == nil {
+			cfg = &core.LauncherConfig{
+				MangoHud:         false,
+				FSR:              false,
+				ShaderCache:      false,
+				HDR:              false,
+				SteamFix:         false,
+				CDN:              false,
+				FpsLimit:         "60",
+				WineDllOverrides: "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n",
+				GrafikMod:        "Нету",
+				FsrLvl:           "95",
+			}
+		}
 	}
+
+	return *cfg
 }
 
 // UpdateSetting сохраняет измененную настройку
 // Используем interface{} для value, так как с фронтенда могут приходить как bool, так и string
 func (a *App) UpdateSetting(key string, value interface{}) error {
-	err := core.UpdateSetting(a.ctx, GetGameRoot(), key, value)
+	err := core.UpdateSetting(a.ctx, GetGameRoot(), key, value, nil)
 	if err != nil {
 		slog.Error("fail to switch settings: %w")
+		return err
 	}
-
 	return nil
 }

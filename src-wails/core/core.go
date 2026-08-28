@@ -8,17 +8,18 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"rfad-launcher-linux/src-wails/downloader"
+	core "rfad-launcher-linux/src-wails/loger"
 	config_patcher "rfad-launcher-linux/src-wails/patches/patch_configs"
 	"rfad-launcher-linux/src-wails/patches/prefix_install"
 	"rfad-launcher-linux/src-wails/patches/proton_install"
 	"rfad-launcher-linux/src-wails/patches/rfad_update"
 	"rfad-launcher-linux/src-wails/utils"
 	fsrswitch "rfad-launcher-linux/src-wails/utils/fsr_switch"
+	graficswitch "rfad-launcher-linux/src-wails/utils/grafic_switch"
 	"rfad-launcher-linux/src-wails/utils/steam_drm_switch"
 	"runtime"
 	"strconv"
@@ -28,19 +29,142 @@ import (
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-const (
-	UpdateFolderID   string = "1JUOctbsugh2IIEUCWcBkupXYVYoJMg4G"
-	YandexPrefixURL  string = "https://disk.yandex.ru/d/y3mx1DXn83CbgQ"
-	SteamFixID       string = "17BUNJj1akU-ktCOK7iDVErFMZJK6_sfQ"
-	PrefixFileCDNURL string = "https://mirror.kraito.ru/rfad/prefix/prefix.tar.gz"
-	SteamFixCDNURL   string = "https://mirror.kraito.ru/rfad/SteamFix/SteamFix.zip"
-	// InnoExtract      string = "https://github.com/dscharrer/innoextract/releases/download/1.9/innoextract-1.9-linux.tar.xz" unused
-	GEProtonUrl    string = "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-5/GE-Proton11-5-x86_64.tar.gz"
-	ConfigPatchURL string = "https://api.kraito.ru/api/v1/config"
-)
+type LauncherConfig struct {
+	LinuxPatchComplete bool   `json:"linuxPatchComplete"`
+	MangoHud           bool   `json:"mangoHud"`
+	FSR                bool   `json:"fsr"`
+	ShaderCache        bool   `json:"shaderCache"`
+	HDR                bool   `json:"hdr"`
+	SteamFix           bool   `json:"steamFix"`
+	FpsLimit           string `json:"fpsLimit"`
+	CDN                bool   `json:"cdn"`
+	WineDllOverrides   string `json:"wineDllOverrides"`
+	GrafikMod          string `json:"grafikMod"`
+	FsrLvl             string `json:"fsrLvl"`
+}
+
+func parseBool(val string) bool {
+	return strings.ToLower(val) == "true"
+}
+
+func GetLauncherConfig(gameRoot string) (*LauncherConfig, error) {
+	configPath := filepath.Join(gameRoot, "launcher_config.txt")
+
+	file, err := os.Open(configPath)
+	if err != nil {
+		// Если файла нет, возвращаем пустой конфиг (со значениями по умолчанию)
+		return &LauncherConfig{}, err
+	}
+	defer file.Close()
+
+	cfg := &LauncherConfig{}
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		if line == "" {
+			continue
+		}
+
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+
+		val := strings.TrimSpace(parts[1])
+		val = strings.Trim(val, `"'`)
+
+		switch key {
+		case "linux-patch-complite":
+			cfg.LinuxPatchComplete = parseBool(val)
+		case "MangoHud":
+			cfg.MangoHud = parseBool(val)
+		case "FSR":
+			cfg.FSR = parseBool(val)
+		case "ShaderCache":
+			cfg.ShaderCache = parseBool(val)
+		case "HDR":
+			cfg.HDR = parseBool(val)
+		case "SteamFix":
+			cfg.SteamFix = parseBool(val)
+		case "FpsLimit":
+			cfg.FpsLimit = val
+		case "CDN":
+			cfg.CDN = parseBool(val)
+		case "WineDllOverrides":
+			cfg.WineDllOverrides = val
+		case "GrafikMod":
+			cfg.GrafikMod = val
+		case "FsrLvl":
+			cfg.FsrLvl = val
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return cfg, err
+	}
+
+	return cfg, nil
+}
+
+func useNvapi() bool {
+	if _, err := os.Stat("/proc/driver/nvidia"); err != nil {
+		core.LogInfo("NVAPI не требуется или драйвер NVIDIA не установлен")
+		return false
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "nvidia-smi", "--query-gpu=name", "--format=csv,noheader")
+	out, err := cmd.Output()
+	if err != nil {
+		core.LogInfo("NVAPI: ошибка выполнения nvidia-smi")
+		return false
+	}
+
+	hasNVAPI := false
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+
+	for _, line := range lines {
+		gpuName := strings.ToUpper(strings.TrimSpace(line))
+
+		if strings.Contains(gpuName, "RTX") {
+			hasNVAPI = true
+			core.LogInfo("Найдена видеокарта с поддержкой NVAPI: %s", gpuName)
+			break
+		}
+	}
+
+	if !hasNVAPI {
+		core.LogInfo("NVAPI не требуется: подходящая видеокарта NVIDIA не найдена")
+	}
+
+	return hasNVAPI
+}
 
 func StartMO2(ctx context.Context, gameRoot string, scriptContent, mo2Args string) error {
-	useGamemode := true
+	// 1. Считываем настройки лаунчера
+	cfg, err := GetLauncherConfig(gameRoot)
+	if err != nil {
+		core.LogInfo("Не удалось прочитать launcher_config.txt, используются настройки по умолчанию: %v", err)
+		if cfg == nil {
+			// На всякий случай задаем дефолтные dll overrides, если файла вообще нет
+			cfg = &LauncherConfig{
+				WineDllOverrides: "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n",
+				ShaderCache:      true,
+			}
+		}
+	}
+
+	// 2. Проверяем наличие NVAPI
+	hasNvapi := useNvapi()
+
+	useGamemode := true // Можно тоже вынести в конфиг позже при желании
 
 	wineBin := filepath.Join(gameRoot, "wine", "proton", "files", "bin", "wine")
 	exePath := filepath.Join(gameRoot, "MO2", "ModOrganizer.exe")
@@ -70,16 +194,25 @@ func StartMO2(ctx context.Context, gameRoot string, scriptContent, mo2Args strin
 		"EXE_PATH="+exePath,
 		"PREFIX_PATH="+prefixPath,
 		"MO2_ARGS="+mo2Args,
-		"USE_GAMEMODE="+strconv.FormatBool(useGamemode),
 		"WINEDLLPATH="+wineDllPath,
 		"LD_LIBRARY_PATH="+ldLibraryPath,
 		"PATH="+wineBinDir+":"+os.Getenv("PATH"),
+
+		// === ПЕРЕДАЕМ НАСТРОЙКИ ИЗ GO В BASH ===
+		"WINEDLLOVERRIDES_PARAM="+cfg.WineDllOverrides,
+		"ENABLE_NVAPI="+strconv.FormatBool(hasNvapi),
+		"ENABLE_HDR="+strconv.FormatBool(cfg.HDR),
+		"ENABLE_FSR="+strconv.FormatBool(cfg.FSR),
+		"ENABLE_MANGOHUD="+strconv.FormatBool(cfg.MangoHud),
+		"ENABLE_SHADER_CACHE="+strconv.FormatBool(cfg.ShaderCache),
+		"USE_GAMEMODE="+strconv.FormatBool(useGamemode),
 
 		"QT_OPENGL=software",
 	)
 
 	cmd := exec.Command("bash", "-c", scriptContent)
 	cmd.Env = env
+
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -95,7 +228,7 @@ func StartMO2(ctx context.Context, gameRoot string, scriptContent, mo2Args strin
 	return nil
 }
 
-func FirstInstall(ctx context.Context, source string, gameRoot string, creds []byte, progressCb func(float64, string)) error {
+func FirstInstall(ctx context.Context, source string, gameRoot string, creds []byte, progressCb func(float64, float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	statusFile := filepath.Join(destDir, "install_status.txt")
 	if err := os.MkdirAll(destDir, 0755); err != nil {
@@ -116,33 +249,37 @@ func FirstInstall(ctx context.Context, source string, gameRoot string, creds []b
 		return ok
 	}
 
-	if err := FirstDownload(ctx, source, gameRoot, creds, progressCb); err != nil {
+	unpackCb := func(p float64, msg string) {
+		progressCb(p, 0, "Распаковка: "+msg)
+	}
+
+	if err := firstDownload(ctx, source, gameRoot, creds, progressCb); err != nil {
 		return fmt.Errorf("Ошибка загрузки файлов: %w", err)
 	}
 
 	if !alreadyInstalled("InstallGEProton") {
-		if err := proton_install.InstallGEProton(ctx, gameRoot); err != nil {
+		if err := proton_install.InstallGEProton(ctx, gameRoot, unpackCb); err != nil {
 			return fmt.Errorf("Ошибка распаковки протона: %w", err)
 		}
 		writeStatus("InstallGEProton")
 	}
 
 	if !alreadyInstalled("UnpackPrefix") {
-		if err := prefix_install.UnpackPrefix(ctx, gameRoot); err != nil {
+		if err := prefix_install.UnpackPrefix(ctx, gameRoot, unpackCb); err != nil {
 			return fmt.Errorf("Ошибка распаковки префикса: %w", err)
 		}
 		writeStatus("UnpackPrefix")
 	}
 
 	if !alreadyInstalled("InstallUpdate") {
-		if err := rfad_update.InstallUpdate(ctx, gameRoot); err != nil {
+		if err := rfad_update.InstallUpdate(ctx, gameRoot, unpackCb); err != nil {
 			return fmt.Errorf("Ошибка обновления игры: %w", err)
 		}
 		writeStatus("InstallUpdate")
 	}
 
 	if !alreadyInstalled("ApplyConfigPatches") {
-		total, err := ApplyConfigPatches(ctx, gameRoot, progressCb)
+		total, err := ApplyConfigPatches(ctx, gameRoot, unpackCb)
 		if err != nil {
 			return fmt.Errorf("Не удалось применить патчи конфигурации игры: %w", err)
 		}
@@ -151,7 +288,7 @@ func FirstInstall(ctx context.Context, source string, gameRoot string, creds []b
 	}
 
 	if !alreadyInstalled("RestoreDisabledSteamDrm") {
-		err := steam_drm_switch.ToggleSteamDRM(ctx, gameRoot, false, progressCb)
+		err := steam_drm_switch.ToggleSteamDRM(ctx, gameRoot, false, unpackCb)
 		if err != nil {
 			return fmt.Errorf("Не удалось востоновить файлы запуска игры: %w", err)
 		}
@@ -166,169 +303,51 @@ func FirstInstall(ctx context.Context, source string, gameRoot string, creds []b
 	}
 	defer configF.Close()
 
-	_, _ = configF.WriteString(`linux-patch-complite: true
-	MangoHud: false
-	FSR: false
-	ShaderCache: true
-	HDR: false
-	SteamFix: false
-	FpsLimit: 
-	CDN: false
-	WineDllOverrides: "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n"
-	GrafikMod: "none"
-	FSRLvL: 95`)
+	utils.SetOneSetting(gameRoot, "linux-patch-complite", "true")
+	utils.SetOneSetting(gameRoot, "MangoHud:", "false")
+	utils.SetOneSetting(gameRoot, "FSR:", "false")
+	utils.SetOneSetting(gameRoot, "ShaderCache:", "true")
+	utils.SetOneSetting(gameRoot, "HDR:", "false")
+	utils.SetOneSetting(gameRoot, "SteamFix:", "false")
+	utils.SetOneSetting(gameRoot, "FpsLimit:", " ")
+	utils.SetOneSetting(gameRoot, "CDN:", "false")
+	utils.SetOneSetting(gameRoot, "WineDllOverrides:", "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n")
+	utils.SetOneSetting(gameRoot, "GrafikMod:", "Нету")
+	utils.SetOneSetting(gameRoot, "FsrLvl:", "95")
 
 	return nil
 }
 
-func FirstDownload(ctx context.Context, source string, gameRoot string, creds []byte, progressCb func(float64, string)) error {
+func firstDownload(ctx context.Context, source string, gameRoot string, creds []byte, progressCb func(float64, float64, string)) error {
 	slog.Info("FirstDownload: gameRoot = " + gameRoot)
-	type ConfigData struct {
-		Data []json.RawMessage `json:"data"`
-	}
-
-	type ConfigResponse struct {
-		Success bool       `json:"success"`
-		Data    ConfigData `json:"data"`
-	}
-
-	downloadCb := func(p float64) {
-		progressCb(p, "Загрузка файлов...")
-	}
-
-	destDir := filepath.Join(gameRoot, "download")
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return fmt.Errorf("не удалось создать папку download: %w", err)
-	}
-	statusFile := filepath.Join(destDir, "download_status.txt")
-	configFile := filepath.Join(destDir, "config.json")
-
-	statusF, err := os.OpenFile(statusFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("не удалось открыть файл статуса: %w", err)
-	}
-	defer statusF.Close()
-
-	writeStatus := func(key, value string) {
-		_, _ = statusF.WriteString(fmt.Sprintf("complete %s %s\n", key, value))
-	}
-
-	alreadyDownloaded := func(key string) bool {
-		ok, _ := CheckDownloadStatus(destDir, key)
-		return ok
-	}
 
 	switch source {
 	case "cdn":
-		var path string
 
-		if !alreadyDownloaded("update") {
-			url, err := LastUpdateFromCDN(ctx)
-			if err != nil {
-				return fmt.Errorf("ошибка получения обновления попробуйте использовать google drive %s", err)
-			}
+		downloader.DownloadUpdate(ctx, gameRoot, "cdn", creds, false, progressCb)
 
-			path, err = downloader.DownloadURL(ctx, url, destDir, downloadCb)
-			if err != nil {
-				return fmt.Errorf("ошибка получения обновления попробуйте использовать google drive %s", err)
-			}
-			writeStatus("update", path)
-		}
+		downloader.DownloadPrefix(ctx, gameRoot, "cdn", creds, false, progressCb)
 
-		if !alreadyDownloaded("prefix") {
-			path, err = downloader.DownloadURL(ctx, PrefixFileCDNURL, destDir, downloadCb)
-			if err != nil {
-				return fmt.Errorf("ошибка получения префикса wine попробуйте использовать google drive %s", err)
-			}
-			writeStatus("prefix", path)
-		}
+		downloader.DownloadSteamfix(ctx, gameRoot, "cdn", creds, false, progressCb)
 
-		if !alreadyDownloaded("steamfix") {
-			path, err = downloader.DownloadURL(ctx, SteamFixCDNURL, destDir, downloadCb)
-			if err != nil {
-				return fmt.Errorf("ошибка получения префикса wine попробуйте использовать google drive %s", err)
-			}
-			writeStatus("steamfix", path)
-		}
+		downloader.DownloadCommunityShaders(ctx, gameRoot, false, progressCb)
 
 	case "gdrive":
-		var paths []string
 
-		if !alreadyDownloaded("update") {
-			paths, err = downloader.DownloadDriveFolder(ctx, creds, UpdateFolderID, destDir, downloadCb)
-			if err != nil {
-				return fmt.Errorf("ошибка получения обновления попробуйте использовать cdn(mirror) %s", err)
-			}
-			for _, p := range paths {
-				writeStatus("update", p)
-			}
-		}
+		//Прорисывать Download Type в функции downloader не обязательно функции загрузки работают исключением if type == "cdn" если значение != он сам выберит google drive
+		downloader.DownloadUpdate(ctx, gameRoot, "gdrive", creds, false, progressCb)
 
-		if !alreadyDownloaded("prefix") {
-			path, err := downloader.DownloadYandex(ctx, YandexPrefixURL, destDir, "pfx dotnet.7z", downloadCb)
-			if err != nil {
-				return fmt.Errorf("ошибка загрузки префикса с Яндекс.Диска: %w", err)
-			}
-			writeStatus("prefix", path)
-		}
+		downloader.DownloadPrefix(ctx, gameRoot, "gdrive", creds, false, progressCb)
 
-		if !alreadyDownloaded("steamfix") {
-			paths, err = downloader.DownloadDriveFolder(ctx, creds, SteamFixID, destDir, downloadCb)
-			if err != nil {
-				return fmt.Errorf("ошибка получения префикса wine попробуйте использовать cdn(mirror) %s", err)
-			}
-			for _, p := range paths {
-				writeStatus("steamfix", p)
-			}
-		}
+		downloader.DownloadSteamfix(ctx, gameRoot, "gdrive", creds, false, progressCb)
 
 	default:
 		return fmt.Errorf("неизвестный источник: %s", source)
 	}
-	var path string
 
-	if !alreadyDownloaded("GE-Proton") {
-		path, err = downloader.DownloadURL(ctx, GEProtonUrl, destDir, downloadCb)
-		if err != nil {
-			return fmt.Errorf("Ошибка загрузки GE-Proton повторите попытку позже %s", err)
-		}
-		writeStatus("GE-Proton", path)
-	}
+	downloader.DownloadGEProton(ctx, gameRoot, false, progressCb)
 
-	if !alreadyDownloaded("config") {
-		req, err := http.NewRequestWithContext(ctx, "GET", ConfigPatchURL, nil)
-		if err != nil {
-			return err
-		}
-
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
-			return fmt.Errorf("ошибка соединения с сервером: %w", err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("сервер вернул статус: %d", resp.StatusCode)
-		}
-
-		var apiResult ConfigResponse
-		if err := json.NewDecoder(resp.Body).Decode(&apiResult); err != nil {
-			return fmt.Errorf("ошибка чтения ответа API: %w", err)
-		}
-
-		if !apiResult.Success {
-			return fmt.Errorf("API вернул success: false")
-		}
-
-		cfgFile, err := os.Create(configFile)
-		jsonData, err := json.MarshalIndent(apiResult.Data.Data, "", "    ")
-		if err != nil {
-			return fmt.Errorf("неудалось пропарсить конфиг с сервера: %w", err)
-		}
-		_, err = cfgFile.Write(jsonData)
-		writeStatus("config", configFile)
-	}
+	downloader.DownloadConfig(ctx, gameRoot, false)
 	return nil
 }
 
@@ -343,50 +362,6 @@ func IsPathExist(ctx context.Context, gameRoot string) (bool, error) {
 	}
 	return false, err
 }
-
-func LastUpdateFromCDN(ctx context.Context) (string, error) {
-	type UpdateData struct {
-		ID        string `json:"id"`
-		Version   string `json:"version"`
-		URL       string `json:"url"`
-		CreatedAt int64  `json:"created_at"`
-	}
-
-	type UpdateResponse struct {
-		Success bool       `json:"success"`
-		Data    UpdateData `json:"data"`
-	}
-
-	apiUrl := "https://api.kraito.ru/api/v1/updates/latest"
-
-	req, err := http.NewRequestWithContext(ctx, "GET", apiUrl, nil)
-	if err != nil {
-		return "", err
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("ошибка соединения с сервером: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("сервер вернул статус: %d", resp.StatusCode)
-	}
-
-	var apiResult UpdateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResult); err != nil {
-		return "", fmt.Errorf("ошибка чтения ответа API: %w", err)
-	}
-
-	if !apiResult.Success {
-		return "", fmt.Errorf("API вернул success: false")
-	}
-	s3BaseURL := "https://mirror.kraito.ru/"
-	return s3BaseURL + apiResult.Data.URL, nil
-}
-
 func CheckDownloadStatus(destDir, keyword string) (bool, error) {
 	statusFile := filepath.Join(destDir, "download_status.txt")
 	f, err := os.Open(statusFile)
@@ -675,7 +650,7 @@ func DirSize(path string) (int64, error) {
 	return size, err
 }
 
-func UpdateSetting(ctx context.Context, gameRoot string, key string, value interface{}) error {
+func UpdateSetting(ctx context.Context, gameRoot string, key string, value interface{}, progressCb func(float64, string)) error {
 	switch key {
 	case "mangoHud":
 		utils.SetOneSetting(gameRoot, "MangoHud:", value)
@@ -697,12 +672,34 @@ func UpdateSetting(ctx context.Context, gameRoot string, key string, value inter
 	case "hdr":
 		utils.SetOneSetting(gameRoot, "HDR:", value)
 	case "steamFix":
+		isSteamFix := false
+		if valBool, ok := value.(bool); ok {
+			isSteamFix = valBool
+		} else if valStr, ok := value.(string); ok {
+			isSteamFix = (strings.TrimSpace(valStr) == "true")
+		}
+
+		if err := steam_drm_switch.ToggleSteamDRM(ctx, gameRoot, isSteamFix, progressCb); err != nil {
+			return err
+		}
 	case "cdn":
 		utils.SetOneSetting(gameRoot, "CDN:", value)
 	case "fpsLimit":
+		// Место для вашей логики лимита кадров
 	case "wineDllOverrides":
 		utils.SetOneSetting(gameRoot, "WineDllOverrides:", value)
 	case "grafikMod":
+		newMod := fmt.Sprintf("%v", value)
+
+		if err := graficswitch.SwitchGrafikMod(ctx, gameRoot, newMod, progressCb); err != nil {
+			return err
+		}
+
+		if err := fsrswitch.SyncFSRSettings(ctx, gameRoot, newMod); err != nil {
+			return fmt.Errorf("ошибка подготовки FSR для мода: %w", err)
+		}
+
+		return utils.SetOneSetting(gameRoot, "GrafikMod:", newMod)
 	case "fsrLvl":
 		fsrLvlStr := fmt.Sprintf("%v", value)
 

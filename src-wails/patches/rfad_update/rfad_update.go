@@ -11,7 +11,7 @@ import (
 )
 
 // ProcessUpdate перемещает архив, распаковывает его и заменяет EngineFixes.dll
-func InstallUpdate(ctx context.Context, gameRoot string) error {
+func InstallUpdate(ctx context.Context, gameRoot string, unpackCb func(float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	statusFile := filepath.Join(destDir, "download_status.txt")
 
@@ -36,7 +36,7 @@ func InstallUpdate(ctx context.Context, gameRoot string) error {
 	if updatePath == "" {
 		return fmt.Errorf("архив обновления не найден в статусе загрузки")
 	}
-	slog.Info("update path: %s", updatePath)
+	slog.Info("update path:", "path", updatePath)
 
 	targetDir := filepath.Join(gameRoot, "MO2", "mods", "RFAD_PATCH")
 	if err := os.RemoveAll(targetDir); err != nil {
@@ -46,8 +46,12 @@ func InstallUpdate(ctx context.Context, gameRoot string) error {
 		return fmt.Errorf("не удалось создать папку RFAD_PATCH: %w", err)
 	}
 
+	// Передаем коллбэк для отображения прогресса во Vue
 	if err := utils.ExtractArchive(ctx, updatePath, targetDir, func(p float64, msg string) {
-		fmt.Printf("Установка обновления: %.0f%% %s\n", p*100, msg)
+		if unpackCb != nil {
+			// Добавляем префикс "Обновление:"
+			unpackCb(p, fmt.Sprintf("Обновление: %s", msg))
+		}
 	}); err != nil {
 		return fmt.Errorf("ошибка распаковки обновления: %w", err)
 	}
@@ -73,7 +77,13 @@ func InstallUpdate(ctx context.Context, gameRoot string) error {
 		os.Remove(subDir)
 	}
 
-	fmt.Printf("Обновление успешно установлено в %s\n", targetDir)
+	slog.Info("Обновление успешно установлено", "target", targetDir)
+
+	// Финальное сообщение для закрытия прогресс-бара этого этапа
+	if unpackCb != nil {
+		unpackCb(1.0, "Обновление успешно установлено")
+	}
+
 	return nil
 }
 

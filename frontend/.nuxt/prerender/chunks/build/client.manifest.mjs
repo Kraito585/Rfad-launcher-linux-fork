@@ -1,10 +1,10 @@
 const client_manifest = {
-  "_MFgcr2jR.js": {
+  "_DN7apkCz.js": {
     "resourceType": "script",
     "module": true,
     "prefetch": true,
     "preload": true,
-    "file": "MFgcr2jR.js",
+    "file": "DN7apkCz.js",
     "name": "nuxt-link",
     "imports": [
       "node_modules/nuxt/dist/app/entry.js"
@@ -71,12 +71,12 @@ const client_manifest = {
     "module": true,
     "prefetch": true,
     "preload": true,
-    "file": "JvMFkuBc.js",
+    "file": "ZBxFrQoz.js",
     "name": "error-404",
     "src": "node_modules/nuxt/dist/app/components/error-404.vue",
     "isDynamicEntry": true,
     "imports": [
-      "_MFgcr2jR.js",
+      "_DN7apkCz.js",
       "node_modules/nuxt/dist/app/entry.js"
     ],
     "css": [
@@ -94,7 +94,7 @@ const client_manifest = {
     "module": true,
     "prefetch": true,
     "preload": true,
-    "file": "XMV23LU9.js",
+    "file": "BKaLH4P_.js",
     "name": "error-500",
     "src": "node_modules/nuxt/dist/app/components/error-500.vue",
     "isDynamicEntry": true,
@@ -116,7 +116,7 @@ const client_manifest = {
     "module": true,
     "prefetch": true,
     "preload": true,
-    "file": "BBYceila.js",
+    "file": "D9FxmnWf.js",
     "name": "entry",
     "src": "node_modules/nuxt/dist/app/entry.js",
     "isEntry": true,
@@ -190,16 +190,16 @@ const client_manifest = {
     "module": true,
     "prefetch": true,
     "preload": true,
-    "file": "CuzJQTvS.js",
+    "file": "BpIaFtex.js",
     "name": "index",
     "src": "pages/index.vue",
     "isDynamicEntry": true,
     "imports": [
       "node_modules/nuxt/dist/app/entry.js",
-      "_MFgcr2jR.js"
+      "_DN7apkCz.js"
     ],
     "css": [
-      "index.DiXhX0Mg.css"
+      "index.Cxsz76wi.css"
     ],
     "assets": [
       "Matrona.B_dM4iPr.webp",
@@ -212,8 +212,8 @@ const client_manifest = {
       "HubotSans-BlackItalic.C8830oaS.woff2"
     ]
   },
-  "index.DiXhX0Mg.css": {
-    "file": "index.DiXhX0Mg.css",
+  "index.Cxsz76wi.css": {
+    "file": "index.Cxsz76wi.css",
     "resourceType": "style",
     "prefetch": true,
     "preload": true

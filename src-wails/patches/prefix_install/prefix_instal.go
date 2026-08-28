@@ -10,7 +10,7 @@ import (
 	"rfad-launcher-linux/src-wails/utils"
 )
 
-func UnpackPrefix(ctx context.Context, gameRoot string) error {
+func UnpackPrefix(ctx context.Context, gameRoot string, unpackCb func(float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	archivePath, err := utils.GetDownloadedPath(destDir, "prefix")
 	if err != nil {
@@ -20,7 +20,7 @@ func UnpackPrefix(ctx context.Context, gameRoot string) error {
 		return fmt.Errorf("архив префикса не найден в статусе загрузки")
 	}
 
-	slog.Info("prefix archive path: %s", archivePath)
+	slog.Info("prefix archive path:", "path", archivePath)
 
 	tempDir := filepath.Join(gameRoot, "temp_prefix_extract")
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
@@ -28,8 +28,11 @@ func UnpackPrefix(ctx context.Context, gameRoot string) error {
 	}
 	defer os.RemoveAll(tempDir)
 
+	// Передаем коллбэк для отображения прогресса распаковки
 	if err := utils.ExtractArchive(ctx, archivePath, tempDir, func(p float64, msg string) {
-		fmt.Printf("Распаковка префикса: %.0f%% %s\n", p*100, msg)
+		if unpackCb != nil {
+			unpackCb(p, fmt.Sprintf("Префикс: %s", msg))
+		}
 	}); err != nil {
 		return fmt.Errorf("ошибка распаковки префикса: %w", err)
 	}
@@ -62,7 +65,7 @@ func UnpackPrefix(ctx context.Context, gameRoot string) error {
 		return fmt.Errorf("не удалось переименовать папку в prefix: %w", err)
 	}
 
-	fmt.Printf("Префикс успешно распакован и переименован в %s\n", prefixTarget)
+	slog.Info("Префикс успешно распакован и переименован", "target", prefixTarget)
 
 	// ==========================================
 	// ЛЕЧЕНИЕ ПРЕФИКСА ПОСЛЕ РАСПАКОВКИ
@@ -70,6 +73,11 @@ func UnpackPrefix(ctx context.Context, gameRoot string) error {
 
 	prefixPath := filepath.Join(prefixTarget, "pfx")
 	slog.Info("Запуск лечения префикса", "prefixPath", prefixPath)
+
+	// Сообщаем пользователю, что началась настройка (wineboot может занять время)
+	if unpackCb != nil {
+		unpackCb(1.0, "Настройка и инициализация префикса (wineboot)...")
+	}
 
 	// 1. Удаляем битые симлинки (основная причина STATUS_DLL_NOT_FOUND c0000135)
 	dosdevicesPath := filepath.Join(prefixPath, "dosdevices")
@@ -112,5 +120,11 @@ func UnpackPrefix(ctx context.Context, gameRoot string) error {
 	}
 
 	slog.Info("Префикс успешно инициализирован и готов к запуску")
+
+	// Финальное сообщение об успешном завершении этапа
+	if unpackCb != nil {
+		unpackCb(1.0, "Префикс успешно настроен")
+	}
+
 	return nil
 }
