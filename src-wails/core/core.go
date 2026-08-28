@@ -18,6 +18,7 @@ import (
 	"rfad-launcher-linux/src-wails/patches/proton_install"
 	"rfad-launcher-linux/src-wails/patches/rfad_update"
 	"rfad-launcher-linux/src-wails/utils"
+	fsrswitch "rfad-launcher-linux/src-wails/utils/fsr_switch"
 	"rfad-launcher-linux/src-wails/utils/steam_drm_switch"
 	"runtime"
 	"strconv"
@@ -165,7 +166,17 @@ func FirstInstall(ctx context.Context, source string, gameRoot string, creds []b
 	}
 	defer configF.Close()
 
-	_, _ = configF.WriteString("linux-patch-complite: true/n")
+	_, _ = configF.WriteString(`linux-patch-complite: true
+	MangoHud: false
+	FSR: false
+	ShaderCache: true
+	HDR: false
+	SteamFix: false
+	FpsLimit: 
+	CDN: false
+	WineDllOverrides: "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n"
+	GrafikMod: "none"
+	FSRLvL: 95`)
 
 	return nil
 }
@@ -662,4 +673,48 @@ func DirSize(path string) (int64, error) {
 		return nil
 	})
 	return size, err
+}
+
+func UpdateSetting(ctx context.Context, gameRoot string, key string, value interface{}) error {
+	switch key {
+	case "mangoHud":
+		utils.SetOneSetting(gameRoot, "MangoHud:", value)
+	case "fsr":
+		isFSR := false
+		if valBool, ok := value.(bool); ok {
+			isFSR = valBool
+		} else if valStr, ok := value.(string); ok {
+			isFSR = (strings.TrimSpace(valStr) == "true")
+		}
+
+		if err := fsrswitch.ApplyFSR(ctx, gameRoot, isFSR); err != nil {
+			return err
+		}
+
+		return utils.SetOneSetting(gameRoot, "FSR:", value)
+	case "shaderCache":
+		utils.SetOneSetting(gameRoot, "ShaderCache:", value)
+	case "hdr":
+		utils.SetOneSetting(gameRoot, "HDR:", value)
+	case "steamFix":
+	case "cdn":
+		utils.SetOneSetting(gameRoot, "CDN:", value)
+	case "fpsLimit":
+	case "wineDllOverrides":
+		utils.SetOneSetting(gameRoot, "WineDllOverrides:", value)
+	case "grafikMod":
+	case "fsrLvl":
+		fsrLvlStr := fmt.Sprintf("%v", value)
+
+		err := fsrswitch.ApplyFsrPatches(ctx, gameRoot, fsrLvlStr)
+		if err != nil {
+			return err
+		}
+		return utils.SetOneSetting(gameRoot, "FsrLvl:", value)
+	default:
+		slog.Warn("Unknown setting key received", "key", key)
+		return nil
+	}
+
+	return nil
 }

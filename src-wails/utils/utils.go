@@ -53,6 +53,80 @@ func GetDownloadedPath(destDir, key string) (string, error) {
 	return "", scanner.Err()
 }
 
+func GetOneSetting(destDir, key string) (string, error) {
+	statusFile := filepath.Join(destDir, "launcher_config.txt")
+	f, err := os.Open(statusFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	prefix := key + " "
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, prefix) {
+			path := strings.TrimPrefix(line, prefix)
+			return path, nil
+		}
+	}
+	return "", scanner.Err()
+}
+
+// SetOneSetting принимает value любого типа (interface{}),
+// конвертирует его в строку и перезаписывает значение в конфиге.
+func SetOneSetting(destDir, key string, value interface{}) error {
+	statusFile := filepath.Join(destDir, "launcher_config.txt")
+	prefix := key + " "
+
+	// Конвертируем interface{} в строку
+	strValue := fmt.Sprintf("%v", value)
+
+	var lines []string
+	keyFound := false
+
+	// Читаем исходный файл, если он существует
+	f, err := os.Open(statusFile)
+	if err == nil {
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := scanner.Text()
+			// Если находим нужный ключ, заменяем всю строку на новое значение
+			if strings.HasPrefix(line, prefix) {
+				lines = append(lines, prefix+strValue)
+				keyFound = true
+			} else {
+				lines = append(lines, line)
+			}
+		}
+
+		f.Close()
+
+		if err := scanner.Err(); err != nil {
+			return fmt.Errorf("ошибка чтения файла: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("ошибка открытия файла: %w", err)
+	}
+
+	// Если ключа не было, добавляем его в конец
+	if !keyFound {
+		lines = append(lines, prefix+strValue)
+	}
+
+	// Перезаписываем файл
+	output := strings.Join(lines, "\n") + "\n"
+	err = os.WriteFile(statusFile, []byte(output), 0644)
+	if err != nil {
+		return fmt.Errorf("ошибка записи файла: %w", err)
+	}
+
+	return nil
+}
+
 func extractTarGz(ctx context.Context, archivePath, targetDir string, progressCb func(float64, string)) error {
 	fmt.Printf("Открытие tar.gz архива: %s\n", archivePath)
 	f, err := os.Open(archivePath)

@@ -1,22 +1,22 @@
-import process from 'node:process';globalThis._importMeta_=globalThis._importMeta_||{url:"file:///_entry.js",env:process.env};import { getRequestHeader, splitCookiesString, setResponseStatus, setResponseHeader, send, getRequestHeaders, eventHandler, appendResponseHeader, removeResponseHeader, createError, getResponseHeader, defineEventHandler, handleCacheHeaders, createEvent, fetchWithEvent, isEvent, setHeaders, sendRedirect, proxyRequest, createApp, createRouter as createRouter$1, toNodeListener, lazyEventHandler, getResponseStatus, setResponseHeaders } from 'file:///mnt/disc2/Projects/rfad-launcher-linux/frontend/node_modules/h3/dist/index.mjs';
-import destr from 'file:///mnt/disc2/Projects/rfad-launcher-linux/frontend/node_modules/destr/dist/index.mjs';
-import { createHooks } from 'file:///mnt/disc2/Projects/rfad-launcher-linux/frontend/node_modules/hookable/dist/index.mjs';
-import { createFetch as createFetch$1, Headers as Headers$1 } from 'file:///mnt/disc2/Projects/rfad-launcher-linux/frontend/node_modules/ofetch/dist/node.mjs';
-import { createCall, createFetch } from 'file:///mnt/disc2/Projects/rfad-launcher-linux/frontend/node_modules/unenv/runtime/fetch/index.mjs';
-import { withQuery, joinURL, decodePath, withLeadingSlash, withoutTrailingSlash, parseURL, withoutBase, getQuery } from 'file:///mnt/disc2/Projects/rfad-launcher-linux/frontend/node_modules/ufo/dist/index.mjs';
-import { klona } from 'file:///mnt/disc2/Projects/rfad-launcher-linux/frontend/node_modules/klona/dist/index.mjs';
-import defu, { defuFn } from 'file:///mnt/disc2/Projects/rfad-launcher-linux/frontend/node_modules/defu/dist/defu.mjs';
-import { snakeCase } from 'file:///mnt/disc2/Projects/rfad-launcher-linux/frontend/node_modules/scule/dist/index.mjs';
-import { createStorage, defineDriver, prefixStorage } from 'file:///mnt/disc2/Projects/rfad-launcher-linux/frontend/node_modules/unstorage/dist/index.mjs';
-import unstorage_47drivers_47fs from 'file:///mnt/disc2/Projects/rfad-launcher-linux/frontend/node_modules/unstorage/drivers/fs.mjs';
-import fsDriver from 'file:///mnt/disc2/Projects/rfad-launcher-linux/frontend/node_modules/unstorage/drivers/fs-lite.mjs';
-import lruCache from 'file:///mnt/disc2/Projects/rfad-launcher-linux/frontend/node_modules/unstorage/drivers/lru-cache.mjs';
-import { toRouteMatcher, createRouter } from 'file:///mnt/disc2/Projects/rfad-launcher-linux/frontend/node_modules/radix3/dist/index.mjs';
-import { getContext } from 'file:///mnt/disc2/Projects/rfad-launcher-linux/frontend/node_modules/unctx/dist/index.mjs';
+import process from 'node:process';globalThis._importMeta_=globalThis._importMeta_||{url:"file:///_entry.js",env:process.env};import { getRequestHeader, splitCookiesString, setResponseStatus, setResponseHeader, send, getRequestHeaders, eventHandler, appendResponseHeader, removeResponseHeader, createError, getResponseHeader, defineEventHandler, handleCacheHeaders, createEvent, fetchWithEvent, isEvent, setHeaders, sendRedirect, proxyRequest, createApp, createRouter as createRouter$1, toNodeListener, lazyEventHandler, getResponseStatus, setResponseHeaders } from 'file:///mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/h3/dist/index.mjs';
+import destr from 'file:///mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/destr/dist/index.mjs';
+import { createHooks } from 'file:///mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/hookable/dist/index.mjs';
+import { createFetch as createFetch$1, Headers as Headers$1 } from 'file:///mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/ofetch/dist/node.mjs';
+import { createCall, createFetch } from 'file:///mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/unenv/runtime/fetch/index.mjs';
+import { withQuery, joinURL, decodePath, withLeadingSlash, withoutTrailingSlash, parseURL, withoutBase, getQuery } from 'file:///mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/ufo/dist/index.mjs';
+import { klona } from 'file:///mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/klona/dist/index.mjs';
+import defu, { defuFn } from 'file:///mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/defu/dist/defu.mjs';
+import { snakeCase } from 'file:///mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/scule/dist/index.mjs';
+import { createStorage, defineDriver, prefixStorage } from 'file:///mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/unstorage/dist/index.mjs';
+import unstorage_47drivers_47fs from 'file:///mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/unstorage/drivers/fs.mjs';
+import fsDriver from 'file:///mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/unstorage/drivers/fs-lite.mjs';
+import lruCache from 'file:///mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/unstorage/drivers/lru-cache.mjs';
+import { toRouteMatcher, createRouter } from 'file:///mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/radix3/dist/index.mjs';
+import { getContext } from 'file:///mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/unctx/dist/index.mjs';
 import { promises } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'file:///mnt/disc2/Projects/rfad-launcher-linux/frontend/node_modules/pathe/dist/index.mjs';
-import { hash } from 'file:///mnt/disc2/Projects/rfad-launcher-linux/frontend/node_modules/ohash/dist/index.mjs';
+import { dirname, resolve } from 'file:///mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/pathe/dist/index.mjs';
+import { hash } from 'file:///mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/ohash/dist/index.mjs';
 
 function hasReqHeader(event, name, includes) {
   const value = getRequestHeader(event, name);
@@ -177,7 +177,7 @@ function getAsset (id) {
 
 const METHODS = /* @__PURE__ */ new Set(["HEAD", "GET"]);
 const EncodingMap = { gzip: ".gz", br: ".br" };
-const _QH81E7 = eventHandler((event) => {
+const _srNeEQ = eventHandler((event) => {
   if (event.method && !METHODS.has(event.method)) {
     return;
   }
@@ -244,14 +244,14 @@ const _QH81E7 = eventHandler((event) => {
   return readAsset(id);
 });
 
-const _lazy_ojti7Z = () => import('../_/renderer.mjs');
+const _lazy_6JhofD = () => import('../_/renderer.mjs');
 
 const handlers = [
-  { route: '', handler: _QH81E7, lazy: false, middleware: true, method: undefined },
-  { route: '/**', handler: _lazy_ojti7Z, lazy: true, middleware: false, method: undefined }
+  { route: '', handler: _srNeEQ, lazy: false, middleware: true, method: undefined },
+  { route: '/**', handler: _lazy_6JhofD, lazy: true, middleware: false, method: undefined }
 ];
 
-const serverAssets = [{"baseName":"server","dir":"/mnt/disc2/Projects/rfad-launcher-linux/frontend/server/assets"}];
+const serverAssets = [{"baseName":"server","dir":"/mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/server/assets"}];
 
 const assets = createStorage();
 
@@ -270,7 +270,7 @@ const normalizeFsKey = item => item.replaceAll(':', '_');
 /**
  * @param {{ base: string }} opts
  */
-const _47mnt_47disc2_47Projects_47rfad_45launcher_45linux_47frontend_47node_modules_47nuxt_47dist_47core_47runtime_47nitro_47cache_45driver_46js = defineDriver((opts) => {
+const _47mnt_47disc2_47Projects_47Rfad_45launcher_45linux_45fork_47frontend_47node_modules_47nuxt_47dist_47core_47runtime_47nitro_47cache_45driver_46js = defineDriver((opts) => {
   const fs = fsDriver({ base: opts.base });
   const lru = lruCache({ max: 1000 });
 
@@ -295,12 +295,12 @@ const storage = createStorage({});
 
 storage.mount('/assets', assets);
 
-storage.mount('internal:nuxt:prerender', _47mnt_47disc2_47Projects_47rfad_45launcher_45linux_47frontend_47node_modules_47nuxt_47dist_47core_47runtime_47nitro_47cache_45driver_46js({"driver":"/mnt/disc2/Projects/rfad-launcher-linux/frontend/node_modules/nuxt/dist/core/runtime/nitro/cache-driver.js","base":"/mnt/disc2/Projects/rfad-launcher-linux/frontend/.nuxt/cache/nitro/prerender"}));
-storage.mount('data', fsDriver({"driver":"fsLite","base":"/mnt/disc2/Projects/rfad-launcher-linux/frontend/.data/kv"}));
-storage.mount('root', unstorage_47drivers_47fs({"driver":"fs","readOnly":true,"base":"/mnt/disc2/Projects/rfad-launcher-linux/frontend","ignore":["**/node_modules/**","**/.git/**"]}));
-storage.mount('src', unstorage_47drivers_47fs({"driver":"fs","readOnly":true,"base":"/mnt/disc2/Projects/rfad-launcher-linux/frontend/server","ignore":["**/node_modules/**","**/.git/**"]}));
-storage.mount('build', unstorage_47drivers_47fs({"driver":"fs","readOnly":false,"base":"/mnt/disc2/Projects/rfad-launcher-linux/frontend/.nuxt","ignore":["**/node_modules/**","**/.git/**"]}));
-storage.mount('cache', unstorage_47drivers_47fs({"driver":"fs","readOnly":false,"base":"/mnt/disc2/Projects/rfad-launcher-linux/frontend/.nuxt/cache","ignore":["**/node_modules/**","**/.git/**"]}));
+storage.mount('internal:nuxt:prerender', _47mnt_47disc2_47Projects_47Rfad_45launcher_45linux_45fork_47frontend_47node_modules_47nuxt_47dist_47core_47runtime_47nitro_47cache_45driver_46js({"driver":"/mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/nuxt/dist/core/runtime/nitro/cache-driver.js","base":"/mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/.nuxt/cache/nitro/prerender"}));
+storage.mount('data', fsDriver({"driver":"fsLite","base":"/mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/.data/kv"}));
+storage.mount('root', unstorage_47drivers_47fs({"driver":"fs","readOnly":true,"base":"/mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend","ignore":["**/node_modules/**","**/.git/**"]}));
+storage.mount('src', unstorage_47drivers_47fs({"driver":"fs","readOnly":true,"base":"/mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/server","ignore":["**/node_modules/**","**/.git/**"]}));
+storage.mount('build', unstorage_47drivers_47fs({"driver":"fs","readOnly":false,"base":"/mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/.nuxt","ignore":["**/node_modules/**","**/.git/**"]}));
+storage.mount('cache', unstorage_47drivers_47fs({"driver":"fs","readOnly":false,"base":"/mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/.nuxt/cache","ignore":["**/node_modules/**","**/.git/**"]}));
 
 function useStorage(base = "") {
   return base ? prefixStorage(storage, base) : storage;
@@ -689,7 +689,7 @@ function _expandFromEnv(value) {
 const _inlineRuntimeConfig = {
   "app": {
     "baseURL": "/",
-    "buildId": "04e1072b-4efd-458b-af99-1296aa5013ac",
+    "buildId": "5035c070-94d0-418c-ba3a-3cc7c6380773",
     "buildAssetsDir": "/_nuxt/",
     "cdnURL": ""
   },

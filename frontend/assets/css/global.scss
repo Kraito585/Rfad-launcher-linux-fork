@@ -28,6 +28,8 @@ html, body {
   top: 0;
   left: 0;
   right: 0;
+  z-index: 100000;
+  --wails-draggable: drag; /* Указываем Wails, что за это можно таскать окно */
 }
 .titlebar-button {
   display: inline-flex;

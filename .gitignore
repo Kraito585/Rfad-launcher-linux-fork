@@ -2,3 +2,4 @@ embed/credentials.json
 build/bin
 frontend/node_modules
 frontend/dist
+gdrive

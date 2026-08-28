@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { EventsOn } from '~/wailsjs/runtime/runtime';
+import { EventsOn, BrowserOpenURL } from '~/wailsjs/runtime/runtime';
 
 import config from '~/config';
 import type { PatchComponentProps } from '~/components/PatchComponent.vue';
@@ -207,6 +207,47 @@ const saveSettings = async () => {
 };
 
 // ===== Основные методы лаунчера =====
+const openUrl = async (url: string) => {
+  console.log('Клик прошел! Отправляем в Go:', url);
+  if (!url) return;
+  try {
+    await window.go.main.App.OpenBrowser(url);
+  } catch (e) {
+    console.error('Ошибка вызова Go:', e);
+  }
+};
+
+const openBrowser = (url: string) => {
+  console.log('Попытка открыть ссылку:', url);
+  if (!url) return;
+  window.go.main.App.BrowserOpenURL(url);
+};
+
+const openDiscord = async () => {
+  console.log('Открываем Discord:', config.discord);
+  window.go.main.App.BrowserOpenURL(config.discord);
+};
+
+const openTelegram = async () => {
+  console.log('Открываем Telegram:', config.telegram);
+  window.go.main.App.BrowserOpenURL(config.telegram);
+};
+
+const openVk = async () => {
+  console.log('Открываем VK:', config.vk);
+  window.go.main.App.BrowserOpenURL(config.vk);
+};
+
+const openBoosty = async () => {
+  console.log('Открываем Boosty:', config.boosty);
+  window.go.main.App.BrowserOpenURL(config.boosty);
+};
+
+const openDb = async () => {
+  console.log('Открываем Базу Знаний:', config.db);
+  window.go.main.App.BrowserOpenURL(config.db);
+};
+
 const openExplorer = async () => {
   await window.go.main.App.OpenExplorer();
 };
@@ -441,38 +482,36 @@ onMounted(async () => {
   </div>
   <div class="px-10 py-10 flex flex-row w-full h-full min-h-svh relative overflow-hidden">
     <div class="flex flex-row gap-6 z-40 w-full">
-      <div class="flex flex-col justify-between min-h-full">
-        <a :href="config.discord" target="_blank">
-          <CircleButton>
-            <DiscordIcon class="w-9 text-secondary" />
-          </CircleButton>
-        </a>
-        <a :href="config.telegram" target="_blank">
-          <CircleButton>
-            <Telegram class="w-7 mr-1 mt-[2px] text-secondary" />
-          </CircleButton>
-        </a>
-        <a :href="config.vk" target="_blank">
-          <CircleButton>
-            <Vk class="w-8 text-secondary" />
-          </CircleButton>
-        </a>
-        <a :href="config.boosty" target="_blank">
-          <CircleButton>
-            <Boosty class="w-8 mb-[2px] ml-[2px] text-secondary" />
-          </CircleButton>
-        </a>
-        <a :href="config.db" target="_blank">
-          <CircleButton>
-            <OpenBook class="w-8 text-secondary" />
-          </CircleButton>
-        </a>
-        <CircleButton @click="openMo2">
-          <MO2 class="w-10 ml-[1px] text-secondary" />
+      <div class="flex flex-col justify-between min-h-full relative z-[100005]">
+        
+        <CircleButton @click.left.prevent="openDiscord()">
+          <DiscordIcon class="w-9 text-secondary pointer-events-none" />
         </CircleButton>
+        
+        <CircleButton @click.left.prevent="openTelegram()">
+          <Telegram class="w-7 mr-1 mt-[2px] text-secondary pointer-events-none" />
+        </CircleButton>
+        
+        <CircleButton @click.left.prevent="openVk()">
+          <Vk class="w-8 text-secondary pointer-events-none" />
+        </CircleButton>
+        
+        <CircleButton @click.left.prevent="openBoosty()">
+          <Boosty class="w-8 mb-[2px] ml-[2px] text-secondary pointer-events-none" />
+        </CircleButton>
+        
+        <CircleButton @click.left.prevent="openDb()">
+          <OpenBook class="w-8 text-secondary pointer-events-none" />
+        </CircleButton>
+
         <CircleButton @click="openExplorer">
           <FolderSmallStroke class="w-8 h-8 text-secondary" />
         </CircleButton>
+
+        <CircleButton @click="openMo2">
+          <MO2 class="w-10 ml-[1px] text-secondary" />
+        </CircleButton>
+        
       </div>
       <div class="horizontal-divider"></div>
       <div class="flex flex-col justify-between h-full">
@@ -570,6 +609,9 @@ onMounted(async () => {
       </div>
     </div>
     <img alt="Matrona" src="assets/image/Matrona.webp" class="matrona z-10" />
+    <Transition name="fade-modal">
+      <SettingsModal v-if="isSettingsOpen" @close="closeSettings" />
+    </Transition>
   </div>
 </template>
 

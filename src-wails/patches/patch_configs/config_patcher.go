@@ -9,9 +9,10 @@ import (
 )
 
 type ConfigPatch struct {
-	TargetFile  string            `json:"TargetFile"`
-	Replace     map[string]string `json:"Replace"`
-	InsertAfter map[string]string `json:"InsertAfter"`
+	TargetFile    string            `json:"TargetFile"`
+	Replace       map[string]string `json:"Replace"`
+	InsertAfter   map[string]string `json:"InsertAfter"`
+	ReplacePrefix map[string]string `json:"ReplacePrefix"`
 }
 
 // ApplyPatchesFromJSON применяет патчи из списка к файлам в корневой папке gameRoot.
@@ -84,6 +85,17 @@ func applySinglePatchSafe(filePath string, patch ConfigPatch) (bool, error) {
 			trimmed := strings.TrimSpace(line)
 			if trimmed == search {
 				lines[i] = replace
+				break
+			}
+		}
+	}
+
+	for prefix, replace := range patch.ReplacePrefix {
+		for i, line := range lines {
+			if strings.HasPrefix(strings.TrimSpace(line), prefix) {
+				if strings.TrimSpace(line) != replace {
+					lines[i] = replace
+				}
 				break
 			}
 		}

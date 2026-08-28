@@ -14,6 +14,19 @@ import (
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+type GameSettings struct {
+	MangoHud         bool   `json:"mangoHud"`
+	Fsr              bool   `json:"fsr"`
+	ShaderCache      bool   `json:"shaderCache"`
+	Hdr              bool   `json:"hdr"`
+	SteamFix         bool   `json:"steamFix"`
+	Cdn              bool   `json:"cdn"`
+	FpsLimit         string `json:"fpsLimit"`
+	WineDllOverrides string `json:"wineDllOverrides"`
+	GrafikMod        string `json:"grafikMod"`
+	FsrLvl           string `json:"fsrLvl"`
+}
+
 type App struct {
 	ctx context.Context
 }
@@ -97,6 +110,12 @@ func (a *App) Update() error {
 
 func (a *App) OpenExplorer() error {
 	slog.Info("OpenExplorer called")
+	cmd := exec.Command("xdg-open", GetGameRoot())
+
+	err := cmd.Start()
+	if err != nil {
+		slog.Warn("Не удалось открыть директорию: %v", err)
+	}
 	return nil
 }
 
@@ -213,8 +232,13 @@ func (a *App) RunCommand(command string, args []string) (string, error) {
 	return "Command output (stub for Unix)", nil
 }
 
-func (a *App) OpenBrowser(url string) error {
+func (a *App) BrowserOpenURL(url string) error {
 	slog.Info("OpenBrowser called", "url", url)
+	err := exec.Command("xdg-open", url).Start()
+	if err != nil {
+		// Обработка ошибки, если браузер не удалось открыть
+		panic(err)
+	}
 	return nil
 }
 
@@ -322,5 +346,31 @@ func (a *App) relaunchToGameRoot(installPath string) error {
 		time.Sleep(500 * time.Millisecond)
 		os.Exit(0)
 	}()
+	return nil
+}
+
+func (a *App) GetGameSettings() GameSettings {
+	return GameSettings{
+		MangoHud:         false,
+		Fsr:              false,
+		ShaderCache:      false,
+		Hdr:              false,
+		SteamFix:         false,
+		Cdn:              false,
+		FpsLimit:         "60",
+		WineDllOverrides: "",
+		GrafikMod:        "ENB",
+		FsrLvl:           "95",
+	}
+}
+
+// UpdateSetting сохраняет измененную настройку
+// Используем interface{} для value, так как с фронтенда могут приходить как bool, так и string
+func (a *App) UpdateSetting(key string, value interface{}) error {
+	err := core.UpdateSetting(a.ctx, GetGameRoot(), key, value)
+	if err != nil {
+		slog.Error("fail to switch settings: %w")
+	}
+
 	return nil
 }
