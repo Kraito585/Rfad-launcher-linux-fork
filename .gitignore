@@ -2,5 +2,7 @@ embed/credentials.json
 build/bin
 frontend/node_modules
 frontend/dist
+frontend/.nuxt
+frontend/.output
 gdrive
 run.test.sh
