@@ -6,6 +6,10 @@ export function BrowserOpenURL(arg1) {
   return window['go']['main']['App']['BrowserOpenURL'](arg1);
 }
 
+export function CheckCSFilesExist() {
+  return window['go']['main']['App']['CheckCSFilesExist']();
+}
+
 export function FirstInstall() {
   return window['go']['main']['App']['FirstInstall']();
 }
@@ -58,6 +62,10 @@ export function LoadPatches() {
   return window['go']['main']['App']['LoadPatches']();
 }
 
+export function Minimize() {
+  return window['go']['main']['App']['Minimize']();
+}
+
 export function OpenExplorer() {
   return window['go']['main']['App']['OpenExplorer']();
 }
@@ -66,8 +74,20 @@ export function OpenMO2() {
   return window['go']['main']['App']['OpenMO2']();
 }
 
+export function OpenProtonTrics() {
+  return window['go']['main']['App']['OpenProtonTrics']();
+}
+
+export function Quit() {
+  return window['go']['main']['App']['Quit']();
+}
+
 export function ReadFile(arg1) {
   return window['go']['main']['App']['ReadFile'](arg1);
+}
+
+export function RecoverComponent(arg1, arg2) {
+  return window['go']['main']['App']['RecoverComponent'](arg1, arg2);
 }
 
 export function RunCommand(arg1, arg2) {

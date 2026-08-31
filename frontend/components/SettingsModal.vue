@@ -12,6 +12,7 @@ const emit = defineEmits<{
 const modalRef = ref<HTMLElement | null>(null);
 const isLoading = ref(true);
 const showDonationModal = ref(false);
+const hasCsFiles = ref(false); // Новое состояние для проверки наличия файлов
 
 // Дефолтное значение для сброса
 const DEFAULT_WINE_OVERRIDES = 'concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n';
@@ -38,6 +39,8 @@ onMounted(async () => {
       const parsed = typeof data === 'string' ? JSON.parse(data) : data;
       settings.value = { ...settings.value, ...parsed };
     }
+    // Проверяем наличие файлов в папке download
+    hasCsFiles.value = await window.go.main.App.CheckCSFilesExist();
   } catch (e) {
     console.error('Ошибка загрузки настроек:', e);
   } finally {
@@ -57,9 +60,9 @@ const handleClickOutside = (event: MouseEvent) => {
 };
 
 // --- УМНАЯ ЛОГИКА ЗАВИСИМОСТЕЙ ---
-// Если выключают CDN, а выбран CommunityShader -> сбрасываем на "Нету"
+// Если выключают CDN, а выбран CommunityShader, и при этом файлов НЕТ -> сбрасываем на "Нету"
 watch(() => settings.value.cdn, async (newCdn) => {
-  if (!newCdn && settings.value.grafikMod === 'CommunityShader') {
+  if (!newCdn && settings.value.grafikMod === 'CommunityShader' && !hasCsFiles.value) {
     settings.value.grafikMod = 'Нету';
     await sendToBackend('grafikMod', 'Нету');
   }
@@ -85,7 +88,8 @@ const resetWineDllOverrides = async () => {
 };
 
 const setGrafikMod = async (mod: string) => {
-  if (!settings.value.cdn && mod === 'CommunityShader') return;
+  // Блокируем клик только если нет CDN И нет скачанных файлов
+  if (!settings.value.cdn && mod === 'CommunityShader' && !hasCsFiles.value) return;
   settings.value.grafikMod = mod;
   await sendToBackend('grafikMod', mod);
 };
@@ -167,7 +171,6 @@ const sendToBackend = async (key: string, value: boolean | string) => {
                 <span :class="['toggle-thumb', settings.steamFix ? 'translate-x-5' : 'translate-x-0']"></span>
               </button>
             </div>
-            <!-- Загрузка CDN на месте бывшей заглушки -->
             <div class="setting-row">
               <span class="setting-label">Загрузка CDN</span>
               <button @click="toggleSetting('cdn')" :class="['toggle-btn', settings.cdn ? 'bg-primary' : 'bg-blockBorder']">
@@ -225,16 +228,15 @@ const sendToBackend = async (key: string, value: boolean | string) => {
             <div class="flex flex-col gap-3">
               <span class="setting-label">Графический мод</span>
               <div class="flex bg-block border border-blockBorder rounded-xl p-1 gap-1">
-                <!-- Добавлена опция "Нету" -->
                 <button
                   v-for="mod in ['Нету', 'ENB', 'ReShade', 'CommunityShader']"
                   :key="mod"
                   @click="setGrafikMod(mod)"
-                  :disabled="mod === 'CommunityShader' && !settings.cdn"
+                  :disabled="mod === 'CommunityShader' && !settings.cdn && !hasCsFiles"
                   :class="[
                     'flex-1 py-2 rounded-lg font-medium transition-colors text-sm',
                     settings.grafikMod === mod ? 'bg-primary text-gray-900' : 'text-secondary hover:text-primary hover:bg-white/5',
-                    mod === 'CommunityShader' && !settings.cdn ? 'opacity-30 cursor-not-allowed hover:bg-transparent hover:text-secondary' : ''
+                    mod === 'CommunityShader' && !settings.cdn && !hasCsFiles ? 'opacity-30 cursor-not-allowed hover:bg-transparent hover:text-secondary' : ''
                   ]"
                 >
                   {{ mod }}
@@ -243,7 +245,6 @@ const sendToBackend = async (key: string, value: boolean | string) => {
             </div>  
 
             <!-- FSR LVL -->
-            <!-- FSR LVL (Убрана опция Custom) -->
             <div class="flex flex-col gap-3">
               <span class="setting-label">Уровень FSR</span>
               <div class="flex bg-block border border-blockBorder rounded-xl p-1 gap-1">
@@ -273,6 +274,7 @@ const sendToBackend = async (key: string, value: boolean | string) => {
 </template>
 
 <style scoped>
+/* Стили остаются без изменений */
 .setting-row {
   @apply flex items-center justify-between bg-block/50 px-4 py-3 rounded-xl border border-transparent hover:border-blockBorder transition-colors;
 }

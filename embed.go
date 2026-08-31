@@ -2,7 +2,7 @@ package main
 
 import "embed"
 
-//go:embed embed/credentials.json embed/start.sh embed/innoextract
+//go:embed embed/credentials.json embed/start.sh embed/innoextract embed/libs.zip
 var bundledAssets embed.FS
 
 func getCreds() []byte {
@@ -18,4 +18,9 @@ func getStartSh() []byte {
 func getInnoextract() []byte {
 	innoextract, _ := bundledAssets.ReadFile("embed/innoextract")
 	return innoextract
+}
+
+func getLibs() []byte {
+	libs, _ := bundledAssets.ReadFile("embed/libs.zip")
+	return libs
 }

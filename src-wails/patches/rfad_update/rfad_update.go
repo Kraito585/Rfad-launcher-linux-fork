@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"rfad-launcher-linux/src-wails/downloader"
 	"rfad-launcher-linux/src-wails/utils"
 	"strings"
 )
@@ -21,11 +22,25 @@ func InstallUpdate(ctx context.Context, gameRoot string, unpackCb func(float64, 
 		return fmt.Errorf("не удалось прочитать файл статуса: %w", err)
 	}
 	lines := strings.Split(string(data), "\n")
-	var updatePath string
+
+	// 1. Собираем все пути для обновления
+	var updatePaths []string
 	for _, line := range lines {
-		if strings.HasPrefix(line, "complete update ") {
-			path := strings.TrimPrefix(line, "complete update ")
-			// Выбираем файл, который заканчивается на .zip и содержит "RFAD_PATCH"
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "complete update ") {
+			updatePaths = append(updatePaths, strings.TrimPrefix(trimmed, "complete update "))
+		}
+	}
+
+	var updatePath string
+
+	// 2. Логика выбора файла в зависимости от источника
+	if len(updatePaths) == 1 {
+		// Если файл только один (например, с CDN), берем его без проверок имени
+		updatePath = updatePaths[0]
+	} else if len(updatePaths) > 1 {
+		// Если файлов несколько (Google Drive), ищем конкретный архив
+		for _, path := range updatePaths {
 			if strings.HasSuffix(path, ".zip") && strings.Contains(path, "RFAD_PATCH") {
 				updatePath = path
 				break
@@ -34,7 +49,7 @@ func InstallUpdate(ctx context.Context, gameRoot string, unpackCb func(float64, 
 	}
 
 	if updatePath == "" {
-		return fmt.Errorf("архив обновления не найден в статусе загрузки")
+		return fmt.Errorf("архив обновления не найден в статусе загрузки (найдено записей: %d)", len(updatePaths))
 	}
 	slog.Info("update path:", "path", updatePath)
 
@@ -87,48 +102,16 @@ func InstallUpdate(ctx context.Context, gameRoot string, unpackCb func(float64, 
 	return nil
 }
 
-// func EnablePlugin(gamePath string, pluginName string) error {
-// 	// Путь к файлу плагинов внутри профиля
-// 	pluginTxtPath := filepath.Join(gamePath, "MO2/profiles/RFAD_SE/plugins.txt")
+func DownloadUpdate(ctx context.Context, gameRoot string, creds []byte, useCDN bool, progressCb func(float64, float64, string)) error {
+	downloadType := "gdrive"
+	if useCDN {
+		downloadType = "cdn"
+	}
 
-// 	// 1. Читаем существующий файл
-// 	file, err := os.OpenFile(pluginTxtPath, os.O_RDWR|os.O_CREATE, 0644)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	defer file.Close()
+	err := downloader.DownloadUpdate(ctx, gameRoot, downloadType, creds, true, progressCb)
+	if err != nil {
+		return fmt.Errorf("ошибка загрузки обновления: %w", err)
+	}
 
-// 	// 2. Проверяем, нет ли уже такого плагина (ищем как с *, так и без)
-// 	found := false
-// 	scanner := bufio.NewScanner(file)
-// 	for scanner.Scan() {
-// 		line := scanner.Text()
-// 		if line == "*"+pluginName || line == pluginName {
-// 			found = true
-// 			break
-// 		}
-// 	}
-
-// 	if err := scanner.Err(); err != nil {
-// 		fmt.Errorf("Ошибка при чтении потока сканером: %v", err)
-// 	}
-
-// 	// 3. Если не нашли, дописываем плагин со звездочкой
-// 	if !found {
-// 		// Переходим в конец файла для записи
-// 		_, err := file.Seek(0, 2)
-// 		if err != nil {
-// 			return err
-// 		}
-
-// 		// Добавляем новую строку со звездочкой
-// 		if _, err := file.WriteString("\n*" + pluginName); err != nil {
-// 			return err
-// 		}
-// 		fmt.Sprintf("Плагин %s успешно активирован в plugins.txt", pluginName)
-// 	} else {
-// 		fmt.Sprintf("Плагин %s уже активен", pluginName)
-// 	}
-
-// 	return nil
-// }
+	return nil
+}

@@ -136,30 +136,39 @@ func SyncFSRSettings(ctx context.Context, gameRoot string, grafikMod string) err
 
 	if grafikMod == "CommunityShader" {
 		// --- ЛОГИКА COMMUNITY SHADERS ---
+
+		// 1. Формируем патч для настроек самого Community Shaders
+		csSettingsPatch := config_patcher.ConfigPatch{
+			TargetFile:    "MO2/overwrite/SKSE/Plugins/CommunityShaders/SettingsUser.json",
+			ReplacePrefix: make(map[string]string),
+		}
+
 		if useFSR {
 			qualityMode := 0
 			switch fsrLvl {
 			case "95":
-				qualityMode = 0
-			case "75":
 				qualityMode = 1
-			case "50":
+			case "75":
 				qualityMode = 2
-			case "25":
+			case "50":
 				qualityMode = 3
+			case "25":
+				qualityMode = 4
 			}
 
-			patches = append(patches, config_patcher.ConfigPatch{
-				TargetFile: "MO2/overwrite/SKSE/Plugins/CommunityShaders/SettingsUser.json",
-				ReplacePrefix: map[string]string{
-					`"qualityMode":`: fmt.Sprintf(`  "qualityMode": %d,`, qualityMode),
-				},
-			})
+			// Включаем FSR и задаем качество
+			csSettingsPatch.ReplacePrefix[`"qualityMode":`] = fmt.Sprintf(`  "qualityMode": %d,`, qualityMode)
+			csSettingsPatch.ReplacePrefix[`"frameGenerationMode":`] = `  "frameGenerationMode": 1,`
+		} else {
+			// Отключаем FSR
+			csSettingsPatch.ReplacePrefix[`"frameGenerationMode":`] = `  "frameGenerationMode": 0,`
 		}
+		patches = append(patches, csSettingsPatch)
 
-		// Возвращаем нативное разрешение (100%)
+		// 2. Возвращаем нативное разрешение экрана (100%)
 		finalW := fmt.Sprintf("%d", int(baseWidth))
 		finalH := fmt.Sprintf("%d", int(baseHeight))
+		resString := fmt.Sprintf("Resolution = %sx%s", finalW, finalH)
 
 		patches = append(patches, config_patcher.ConfigPatch{
 			TargetFile: "MO2/profiles/RFAD_SE/SkyrimPrefs.ini",
@@ -168,7 +177,7 @@ func SyncFSRSettings(ctx context.Context, gameRoot string, grafikMod string) err
 				"iSize H=": fmt.Sprintf("iSize H=%s", finalH),
 			},
 		})
-		resString := fmt.Sprintf("Resolution = %sx%s", finalW, finalH)
+
 		patches = append(patches, config_patcher.ConfigPatch{
 			TargetFile: "MO2/mods/SSE Display Tweaks/SKSE/Plugins/SSEDisplayTweaks.ini",
 			ReplacePrefix: map[string]string{
@@ -176,7 +185,16 @@ func SyncFSRSettings(ctx context.Context, gameRoot string, grafikMod string) err
 			},
 		})
 
+		// 3. ОТКЛЮЧАЕМ EVLaS при использовании Community Shaders
+		patches = append(patches, config_patcher.ConfigPatch{
+			TargetFile: "MO2/profiles/RFAD_SE/modlist.txt",
+			Replace: map[string]string{
+				"+Enhanced Volumetric Lighting and Shadows (EVLaS)": "-Enhanced Volumetric Lighting and Shadows (EVLaS)",
+			},
+		})
+
 	} else {
+		// --- ЛОГИКА ДЛЯ ENB ИЛИ ВАНИЛЛЫ ---
 		multiplier := 1.0
 		if useFSR {
 			switch fsrLvl {
@@ -191,8 +209,10 @@ func SyncFSRSettings(ctx context.Context, gameRoot string, grafikMod string) err
 			}
 		}
 
+		// Высчитываем сжатое разрешение для Wine FSR
 		finalW := fmt.Sprintf("%d", int(baseWidth*multiplier))
 		finalH := fmt.Sprintf("%d", int(baseHeight*multiplier))
+		resString := fmt.Sprintf("Resolution = %sx%s", finalW, finalH)
 
 		patches = append(patches, config_patcher.ConfigPatch{
 			TargetFile: "MO2/profiles/RFAD_SE/SkyrimPrefs.ini",
@@ -202,7 +222,6 @@ func SyncFSRSettings(ctx context.Context, gameRoot string, grafikMod string) err
 			},
 		})
 
-		resString := fmt.Sprintf("Resolution = %sx%s", finalW, finalH)
 		patches = append(patches, config_patcher.ConfigPatch{
 			TargetFile: "MO2/mods/SSE Display Tweaks/SKSE/Plugins/SSEDisplayTweaks.ini",
 			Replace: map[string]string{
@@ -213,12 +232,21 @@ func SyncFSRSettings(ctx context.Context, gameRoot string, grafikMod string) err
 				"Resolution =": resString,
 			},
 		})
+
+		// ВКЛЮЧАЕМ EVLaS обратно
+		patches = append(patches, config_patcher.ConfigPatch{
+			TargetFile: "MO2/profiles/RFAD_SE/modlist.txt",
+			Replace: map[string]string{
+				"-Enhanced Volumetric Lighting and Shadows (EVLaS)": "+Enhanced Volumetric Lighting and Shadows (EVLaS)",
+			},
+		})
 	}
 
+	// Единоразово применяем весь массив патчей
 	if len(patches) > 0 {
 		_, err := config_patcher.ApplyPatchesFromJSON(gameRoot, patches, nil)
 		if err != nil {
-			return fmt.Errorf("ошибка синхронизации FSR: %w", err)
+			return fmt.Errorf("ошибка синхронизации FSR и профилей модов: %w", err)
 		}
 	}
 

@@ -17,9 +17,8 @@ import (
 	"rfad-launcher-linux/src-wails/patches/prefix_install"
 	"rfad-launcher-linux/src-wails/patches/proton_install"
 	"rfad-launcher-linux/src-wails/patches/rfad_update"
+	unpacksteamfix "rfad-launcher-linux/src-wails/patches/unpack_steam_fix"
 	"rfad-launcher-linux/src-wails/utils"
-	fsrswitch "rfad-launcher-linux/src-wails/utils/fsr_switch"
-	graficswitch "rfad-launcher-linux/src-wails/utils/grafic_switch"
 	"rfad-launcher-linux/src-wails/utils/steam_drm_switch"
 	"runtime"
 	"strconv"
@@ -155,8 +154,7 @@ func StartMO2(ctx context.Context, gameRoot string, scriptContent, mo2Args strin
 		if cfg == nil {
 			// На всякий случай задаем дефолтные dll overrides, если файла вообще нет
 			cfg = &LauncherConfig{
-				WineDllOverrides: "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n",
-				ShaderCache:      true,
+				WineDllOverrides: "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b",
 			}
 		}
 	}
@@ -206,6 +204,7 @@ func StartMO2(ctx context.Context, gameRoot string, scriptContent, mo2Args strin
 		"ENABLE_MANGOHUD="+strconv.FormatBool(cfg.MangoHud),
 		"ENABLE_SHADER_CACHE="+strconv.FormatBool(cfg.ShaderCache),
 		"USE_GAMEMODE="+strconv.FormatBool(useGamemode),
+		"STEAM_FIX_ENABLED="+strconv.FormatBool(cfg.SteamFix),
 
 		"QT_OPENGL=software",
 	)
@@ -228,7 +227,7 @@ func StartMO2(ctx context.Context, gameRoot string, scriptContent, mo2Args strin
 	return nil
 }
 
-func FirstInstall(ctx context.Context, gameRoot string, creds []byte, progressCb func(float64, string)) error {
+func FirstInstall(ctx context.Context, gameRoot string, creds []byte, libs []byte, progressCb func(float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	statusFile := filepath.Join(destDir, "install_status.txt")
 
@@ -258,6 +257,14 @@ func FirstInstall(ctx context.Context, gameRoot string, creds []byte, progressCb
 		if progressCb != nil {
 			progressCb(p, "Распаковка: "+msg)
 		}
+	}
+
+	if !alreadyInstalled("InstallDllOverrides") {
+		err := PrepareEmbeddedLibs(gameRoot, libs, unpackCb)
+		if err != nil {
+			return fmt.Errorf("Не удалось подготовить встроенные библиотеки: %w", err)
+		}
+		writeStatus("InstallDllOverrides")
 	}
 
 	if !alreadyInstalled("InstallGEProton") {
@@ -297,6 +304,14 @@ func FirstInstall(ctx context.Context, gameRoot string, creds []byte, progressCb
 		}
 		slog.Info("Восстановление файлов запуска закончено")
 		writeStatus("RestoreDisabledSteamDrm")
+	}
+
+	if !alreadyInstalled("InstallDrmSwitch") {
+		err := unpacksteamfix.UnpackSteamFix(ctx, gameRoot, unpackCb)
+		if err != nil {
+			return fmt.Errorf("Не удалось установить переключатель Steam DRM: %w", err)
+		}
+		writeStatus("InstallDrmSwitch")
 	}
 
 	utils.SetOneSetting(gameRoot, "linux-patch-complite:", true)
@@ -578,7 +593,7 @@ Loop:
 	utils.SetOneSetting(installPath, "SteamFix:", "false")
 	utils.SetOneSetting(installPath, "FpsLimit:", " ")
 	utils.SetOneSetting(installPath, "CDN:", "false")
-	utils.SetOneSetting(installPath, "WineDllOverrides:", "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n")
+	utils.SetOneSetting(installPath, "WineDllOverrides:", "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b")
 	utils.SetOneSetting(installPath, "GrafikMod:", "Нету")
 	utils.SetOneSetting(installPath, "FsrLvl:", "95")
 
@@ -664,67 +679,58 @@ func DirSize(path string) (int64, error) {
 	return size, err
 }
 
-func UpdateSetting(ctx context.Context, gameRoot string, key string, value interface{}, progressCb func(float64, string)) error {
-	switch key {
-	case "mangoHud":
-		utils.SetOneSetting(gameRoot, "MangoHud:", value)
-	case "fsr":
-		isFSR := false
-		if valBool, ok := value.(bool); ok {
-			isFSR = valBool
-		} else if valStr, ok := value.(string); ok {
-			isFSR = (strings.TrimSpace(valStr) == "true")
-		}
+func PrepareEmbeddedLibs(gameRoot string, libsArchive []byte, progressCb func(float64, string)) error {
+	if len(libsArchive) == 0 {
+		return fmt.Errorf("массив библиотек пуст, пропускаем")
+	}
 
-		if err := fsrswitch.ApplyFSR(ctx, gameRoot, isFSR); err != nil {
-			return err
-		}
+	slog.Info("Извлечение переданных библиотек (libs.zip)")
+	if progressCb != nil {
+		progressCb(0.1, "Извлечение встроенных библиотек DXVK...")
+	}
 
-		return utils.SetOneSetting(gameRoot, "FSR:", value)
-	case "shaderCache":
-		utils.SetOneSetting(gameRoot, "ShaderCache:", value)
-	case "hdr":
-		utils.SetOneSetting(gameRoot, "HDR:", value)
-	case "steamFix":
-		isSteamFix := false
-		if valBool, ok := value.(bool); ok {
-			isSteamFix = valBool
-		} else if valStr, ok := value.(string); ok {
-			isSteamFix = (strings.TrimSpace(valStr) == "true")
-		}
+	downloadDir := filepath.Join(gameRoot, "download")
+	if err := os.MkdirAll(downloadDir, 0755); err != nil {
+		return fmt.Errorf("не удалось создать папку download: %w", err)
+	}
 
-		if err := steam_drm_switch.ToggleSteamDRM(ctx, gameRoot, isSteamFix, progressCb); err != nil {
-			return err
-		}
-	case "cdn":
-		utils.SetOneSetting(gameRoot, "CDN:", value)
-	case "fpsLimit":
-		// Место для вашей логики лимита кадров
-	case "wineDllOverrides":
-		utils.SetOneSetting(gameRoot, "WineDllOverrides:", value)
-	case "grafikMod":
-		newMod := fmt.Sprintf("%v", value)
+	libsZipPath := filepath.Join(downloadDir, "libs.zip")
 
-		if err := graficswitch.SwitchGrafikMod(ctx, gameRoot, newMod, progressCb); err != nil {
-			return err
-		}
+	// 1. Записываем переданные байты на диск
+	if err := os.WriteFile(libsZipPath, libsArchive, 0644); err != nil {
+		return fmt.Errorf("ошибка записи архива libs.zip: %w", err)
+	}
 
-		if err := fsrswitch.SyncFSRSettings(ctx, gameRoot, newMod); err != nil {
-			return fmt.Errorf("ошибка подготовки FSR для мода: %w", err)
-		}
+	if progressCb != nil {
+		progressCb(0.5, "Регистрация библиотек в системе...")
+	}
 
-		return utils.SetOneSetting(gameRoot, "GrafikMod:", newMod)
-	case "fsrLvl":
-		fsrLvlStr := fmt.Sprintf("%v", value)
+	// 2. Обновляем download_status.txt
+	statusFilePath := filepath.Join(downloadDir, "download_status.txt")
+	var lines []string
+	if content, err := os.ReadFile(statusFilePath); err == nil {
+		lines = strings.Split(strings.TrimSpace(string(content)), "\n")
+	}
 
-		err := fsrswitch.ApplyFsrPatches(ctx, gameRoot, fsrLvlStr)
-		if err != nil {
-			return err
+	var newLines []string
+	for _, line := range lines {
+		if line == "" || strings.Contains(line, " libs ") {
+			continue
 		}
-		return utils.SetOneSetting(gameRoot, "FsrLvl:", value)
-	default:
-		slog.Warn("Unknown setting key received", "key", key)
-		return nil
+		newLines = append(newLines, line)
+	}
+
+	statusLine := fmt.Sprintf("complete libs %s", libsZipPath)
+	newLines = append(newLines, statusLine)
+
+	finalContent := strings.Join(newLines, "\n") + "\n"
+	if err := os.WriteFile(statusFilePath, []byte(finalContent), 0644); err != nil {
+		return fmt.Errorf("ошибка обновления download_status.txt: %w", err)
+	}
+
+	slog.Info("Библиотеки успешно подготовлены", "path", libsZipPath)
+	if progressCb != nil {
+		progressCb(1.0, "Встроенные библиотеки готовы")
 	}
 
 	return nil

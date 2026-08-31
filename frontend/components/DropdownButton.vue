@@ -1,16 +1,22 @@
 <script setup lang="ts">
+import { ref, onMounted } from 'vue';
 import Package from '~/components/icons/Package.vue';
 import Download from '~/components/icons/Download.vue';
 import Folder from '~/components/icons/Folder.vue';
 import GamepadIcon from '~/components/icons/Gamepad.vue';
 import Cog from '~/components/icons/Cog.vue';
+// Не забудь импортировать новые иконки!
+import Wrench from '~/components/icons/Wrench.vue';
+import Terminal from '~/components/icons/Terminal.vue';
 
 interface Events {
-  (e: 'update'): void,
-  (e: 'openMo2'): void,
-  (e: 'openExplorer'): void
+  (e: 'update'): void
+  (e: 'open-mo2'): void
+  (e: 'open-explorer'): void
+  (e: 'open-settings'): void
   (e: 'start_game'): void
-  (e: 'openSettings'): void
+  (e: 'open-recovery'): void
+  (e: 'open-protontricks'): void
 }
 
 const props = defineProps<{
@@ -29,7 +35,8 @@ onMounted(() => {
   firstStart.value = !localStorage.getItem('lastUpdate')
 })
 
-const processClick = (e: 'update' | 'openMo2' | 'openExplorer' | 'start_game' | 'openSettings') => {
+// Добавили новые события в типы функции, чтобы меню закрывалось при клике
+const processClick = (e: 'update' | 'openMo2' | 'openExplorer' | 'start_game' | 'openSettings' | 'open-recovery' | 'open-protontricks') => {
   emit(e as any);
   isDropdownOpen.value = false;
 }
@@ -88,6 +95,25 @@ const processClick = (e: 'update' | 'openMo2' | 'openExplorer' | 'start_game' | 
             <Folder class="w-4 h-4"/>
             Открыть папку
           </div>
+          
+          <!-- Новая кнопка: Восстановление -->
+          <div
+            class="flex flex-row gap-2 items-center cursor-pointer hover:opacity-75 transition-opacity"
+            @click="processClick('open-recovery')"
+          >
+            <Wrench class="w-4 h-4"/>
+            Восстановление
+          </div>
+
+          <!-- Новая кнопка: Protontricks -->
+          <div
+            class="flex flex-row gap-2 items-center cursor-pointer hover:opacity-75 transition-opacity"
+            @click="processClick('open-protontricks')"
+          >
+            <Terminal class="w-4 h-4"/>
+            Protontricks
+          </div>
+          
         </div>
       </div>
     </transition>

@@ -30,6 +30,7 @@ import Expand from '~/components/icons/Expand.vue';
 import SettingsModal from '~/components/SettingsModal.vue';
 import RemoteErrorMessage from '~/components/RemoteErrorMessage.vue';
 import NetworkErrorMessage from '~/components/NetworkErrorMessage.vue';
+import ProtonTricksErrorMessage from '~/components/ProtonTricksErrorMessage.vue';
 
 // ===== Модалка установки =====
 const selectInstaller = async () => {
@@ -45,7 +46,7 @@ const selectInstallDir = async () => {
 // ===== Состояния для модалки CDN =====
 const showFirstInstallCdnModal = ref(false);
 const currentCdnState = ref(false);
-
+const protonTricksError = ref(false);
 const startInstall = async () => {
   if (!installerPath.value || !installPath.value) {
     // Можно показать предупреждение через ShowMessageDialog
@@ -77,6 +78,14 @@ const startInstall = async () => {
   } finally {
     isInstalling.value = false;
     uninstallProgress();
+  }
+};
+
+const openProtontricks = async () => {
+  try {
+    await window.go.main.App.OpenProtonTrics();
+  } catch (e) {
+    console.error('Ошибка вызова Protontricks:', e);
   }
 };
 
@@ -130,6 +139,7 @@ const selectedVoice = ref<'ru' | 'en' | null>(null);
 const initialVoice = ref<'ru' | 'en' | null>(null);
 const isSettingsOpen = ref(false);
 const isSavingSettings = ref(false);
+const showRecoveryModal = ref(false);
 
 const isSettingsDirty = computed(() => {
   if (selectedFps.value === null || selectedVoice.value === null) return false;
@@ -194,6 +204,7 @@ const openSettings = async () => {
   isSettingsOpen.value = true;
 };
 
+
 const closeSettings = () => { isSettingsOpen.value = false; };
 
 const saveSettings = async () => {
@@ -212,22 +223,6 @@ const saveSettings = async () => {
 };
 
 // ===== Основные методы лаунчера =====
-const openUrl = async (url: string) => {
-  console.log('Клик прошел! Отправляем в Go:', url);
-  if (!url) return;
-  try {
-    await window.go.main.App.OpenBrowser(url);
-  } catch (e) {
-    console.error('Ошибка вызова Go:', e);
-  }
-};
-
-const openBrowser = (url: string) => {
-  console.log('Попытка открыть ссылку:', url);
-  if (!url) return;
-  window.go.main.App.BrowserOpenURL(url);
-};
-
 const openDiscord = async () => {
   console.log('Открываем Discord:', config.discord);
   window.go.main.App.BrowserOpenURL(config.discord);
@@ -258,14 +253,39 @@ const openExplorer = async () => {
 };
 
 const openMo2 = async () => {
-  await window.go.main.App.OpenMO2();
+  isGameStarting.value = true;
+  try {
+    await window.go.main.App.OpenMO2();
+  } catch (e) {
+    console.error('Ошибка вызова OpenMO2:', e);
+    isGameStarting.value = false;
+  }
 };
 
 const startGame = async () => {
   isGameStarting.value = true;
-  await window.go.main.App.StartGame();
-  await wait(30000);
-  isGameStarting.value = false;
+  try {
+    await window.go.main.App.StartGame();
+  } catch (e) {
+    console.error('Ошибка вызова StartGame:', e);
+    isGameStarting.value = false;
+  }
+};
+
+const minimizeWindow = () => {
+  try {
+    window.go.main.App.Minimize();
+  } catch (e) {
+    console.error('Ошибка при сворачивании окна:', e);
+  }
+};
+
+const closeWindow = () => {
+  try {
+    window.go.main.App.Quit();
+  } catch (e) {
+    console.error('Ошибка при закрытии окна:', e);
+  }
 };
 
 const update = async (isFirstStart: boolean = false) => {
@@ -275,20 +295,28 @@ const update = async (isFirstStart: boolean = false) => {
   }
   showConfirmation.value = false;
 
+  // 1. Сбрасываем значения
   updateDownloadPercentage.value = 0;
   updateUnpackPercentage.value = 0;
   additionalProgress.value = 0;
   updateDownloadSpeed.value = '0';
   updateDownloaded.value = false;
   updateUnpacked.value = false;
-  updateStarted.value = true;
 
-  // Подписка на события прогресса (Wails Events)
+  // 2. ИСПРАВЛЕНИЕ: Отключаем дублирующий верхний бар и показываем нижний
+  updateStarted.value = false; 
+  updateDownloadStarted.value = true;
+  updateUnpackStarted.value = false;
+
+  // 3. Подписка на события прогресса (без кривых фильтров по имени)
   const unlistenDownload = EventsOn('download-progress', (data: any) => {
-    if (data.fileName && data.fileName.includes('update')) {
+    // Поддержка как числа (байты), так и готовой строки (мегабайты) от бэкенда
+    if (typeof data.speedBytesPerSec === 'number') {
       updateDownloadSpeed.value = (data.speedBytesPerSec / 1024 / 1024).toFixed(1);
-      updateDownloadPercentage.value = data.percentage;
+    } else {
+      updateDownloadSpeed.value = data.speedBytesPerSec;
     }
+    updateDownloadPercentage.value = data.percentage;
   });
 
   const unlistenUnpack = EventsOn('unpack-progress', (data: any) => {
@@ -296,46 +324,95 @@ const update = async (isFirstStart: boolean = false) => {
   });
 
   const unlistenUpdateStatus = EventsOn('update-status', (data: any) => {
-    if (data.status === 'download-started') updateDownloadStarted.value = true;
+    if (data.status === 'download-started') {
+      updateDownloadStarted.value = true;
+      updateUnpackStarted.value = false;
+    }
     if (data.status === 'download-finished') {
       updateDownloaded.value = true;
       updateDownloadStarted.value = false;
-      unlistenDownload();
     }
-    if (data.status === 'unpack-started') updateUnpackStarted.value = true;
+    if (data.status === 'unpack-started') {
+      updateUnpackStarted.value = true;
+      updateDownloadStarted.value = false;
+    }
     if (data.status === 'unpack-finished') {
       updateUnpacked.value = true;
       updateUnpackStarted.value = false;
-      unlistenUnpack();
     }
     if (data.status === 'load-order-update-started') additionalProgress.value += 1;
     if (data.status === 'load-order-update-finished') additionalProgress.value += 1;
   });
 
-  await window.go.main.App.Update();
+  // 4. Запуск бэкенда
+  try {
+    await window.go.main.App.Update();
+  } catch (e) {
+    console.error('Ошибка при обновлении:', e);
+  }
 
   await wait(300);
   localStorage.setItem('lastUpdate', Date.now().toString());
   firstStart.value = !localStorage.getItem('lastUpdate');
+
+  // 5. Очищаем интерфейс
   updateStarted.value = false;
+  updateDownloadStarted.value = false;
+  updateUnpackStarted.value = false;
 
-  // Обновляем версии
-  const local = await window.go.main.App.GetLocalVersion();
-  localVersion.value = local === 'NoPatch' ? '0.0' : local;
-  const remote = await window.go.main.App.GetRemoteVersion();
-  remoteVersion.value = remote === 'NoPatch' ? '0.0' : remote;
-  updateAvailable.value = remoteVersion.value !== localVersion.value;
-
+  // 6. Обязательно отписываемся от событий!
+  unlistenDownload();
+  unlistenUnpack();
   unlistenUpdateStatus();
+
+  // 7. Обновляем версии на экране
+  await loadVersions();
 };
 
 const startFirstInstallFlow = async () => {
   showFirstInstallCdnModal.value = false;
 
+  // 1. Правильно инициализируем состояния
   isGameStarting.value = true;
-  updateStarted.value = true;
-  updateDownloadStarted.value = true;
+  updateStarted.value = false; // Важно: ставим false, чтобы скрыть верхний (дублирующий) бар!
+  updateDownloadStarted.value = true; // Показываем только бар скачивания
+  updateUnpackStarted.value = false;
   updateDownloadPercentage.value = 0;
+  updateDownloadSpeed.value = '0';
+
+  // 2. ПОДПИСЫВАЕМСЯ на события от бэкенда именно для этого процесса
+  const unlistenDownload = EventsOn('download-progress', (data: any) => {
+    // Безопасная обработка скорости (на случай, если бэкенд пришлет число в байтах или уже готовую строку МБ/с)
+    if (typeof data.speedBytesPerSec === 'number') {
+      updateDownloadSpeed.value = (data.speedBytesPerSec / 1024 / 1024).toFixed(1);
+    } else {
+      updateDownloadSpeed.value = data.speedBytesPerSec;
+    }
+    updateDownloadPercentage.value = data.percentage;
+  });
+
+  const unlistenUnpack = EventsOn('unpack-progress', (data: any) => {
+    updateUnpackPercentage.value = data.percentage;
+  });
+
+  const unlistenUpdateStatus = EventsOn('update-status', (data: any) => {
+    if (data.status === 'download-started') {
+      updateDownloadStarted.value = true;
+      updateUnpackStarted.value = false;
+    }
+    if (data.status === 'download-finished') {
+      updateDownloadStarted.value = false;
+    }
+    if (data.status === 'unpack-started') {
+      updateUnpackStarted.value = true;
+      updateDownloadStarted.value = false;
+    }
+    if (data.status === 'unpack-finished') {
+      updateUnpackStarted.value = false;
+    }
+  });
+
+  // 3. Запускаем установку
   try {
     await window.go.main.App.FirstInstall();
     needsFirstInstall.value = false;
@@ -343,9 +420,14 @@ const startFirstInstallFlow = async () => {
   } catch (e) {
     console.error('FirstInstall error:', e);
   } finally {
+    // 4. Очищаем интерфейс и ОТПИСЫВАЕМСЯ от событий
     isGameStarting.value = false;
-    updateStarted.value = false;
     updateDownloadStarted.value = false;
+    updateUnpackStarted.value = false;
+    
+    unlistenDownload();
+    unlistenUnpack();
+    unlistenUpdateStatus();
   }
 };
 
@@ -393,9 +475,6 @@ const checkUpdates = async () => {
 
 // ===== Жизненный цикл =====
 onMounted(async () => {
-  // Управление окном (Wails)
-  document.getElementById('titlebar-minimize')?.addEventListener('click', () => window.runtime.WindowMinimise());
-  document.getElementById('titlebar-close')?.addEventListener('click', () => window.runtime.WindowClose());
 
   firstStart.value = !localStorage.getItem('lastUpdate');
 
@@ -453,6 +532,50 @@ onMounted(async () => {
   observeScrollability('patches');
 
   await checkUpdates();
+  EventsOn('update-status', (data: any) => {
+    if (data.status === 'download-started') {
+      updateStarted.value = false; 
+      updateDownloadStarted.value = true;
+      updateUnpackStarted.value = false;
+    }
+    if (data.status === 'download-finished') {
+      updateDownloadStarted.value = false;
+    }
+    if (data.status === 'unpack-started') {
+      updateStarted.value = false;
+      updateUnpackStarted.value = true;
+      updateDownloadStarted.value = false;
+    }
+    if (data.status === 'unpack-finished' || data.status === 'process-finished') {
+      updateStarted.value = false;
+      updateUnpackStarted.value = false;
+      updateDownloadStarted.value = false;
+    }
+  });
+
+  // 2. Глобальный слушатель загрузки
+  EventsOn('download-progress', (data: any) => {
+    if (typeof data.speedBytesPerSec === 'number') {
+      updateDownloadSpeed.value = (data.speedBytesPerSec / 1024 / 1024).toFixed(1);
+    } else {
+      updateDownloadSpeed.value = data.speedBytesPerSec;
+    }
+    updateDownloadPercentage.value = data.percentage;
+  });
+
+  // 3. Глобальный слушатель распаковки/лечения
+  EventsOn('unpack-progress', (data: any) => {
+    updateUnpackPercentage.value = data.percentage;
+  });
+EventsOn('game-exit', () => {
+    isGameStarting.value = false;
+  });
+
+  // Глобальный слушатель краша процесса
+  EventsOn('game-error', (err: any) => {
+    console.error('Процесс завершился с ошибкой:', err);
+    isGameStarting.value = false;
+  });
 });
 </script>
 
@@ -494,15 +617,15 @@ onMounted(async () => {
     </div>
   </div>
 </Transition>
-  <div data-tauri-drag-region class="titlebar z-[100000]">
-    <div class="titlebar-button" id="titlebar-minimize">
-      <Minus class="text-primary w-5" />
+  <div style="--wails-draggable: drag" class="titlebar z-[100000]">
+    <div style="--wails-draggable: no-drag" class="titlebar-button" @click="minimizeWindow">
+      <Minus class="text-primary w-5 pointer-events-none" />
     </div>
-    <div class="titlebar-button opacity-70 pointer-events-none cursor-not-allowed" id="titlebar-maximize">
-      <Expand class="text-primary w-4" />
+    <div style="--wails-draggable: no-drag" class="titlebar-button opacity-70 cursor-not-allowed">
+      <Expand class="text-primary w-4 pointer-events-none" />
     </div>
-    <div class="titlebar-button" id="titlebar-close">
-      <IconsX class="text-primary w-5" />
+    <div style="--wails-draggable: no-drag" class="titlebar-button" @click="closeWindow">
+      <IconsX class="text-primary w-5 pointer-events-none" />
     </div>
   </div>
   <div class="px-10 py-10 flex flex-row w-full h-full min-h-svh relative overflow-hidden">
@@ -560,6 +683,13 @@ onMounted(async () => {
             <UpdatingMessage :percentage="updatePercentage" v-if="updateStarted" class="w-full" />
             <UnpackingMessage :percentage="updateUnpackPercentage" v-if="updateUnpackStarted" class="w-full" />
             <DownloadingMessage :speed="updateDownloadSpeed" :percentage="updateDownloadPercentage" v-if="updateDownloadStarted" class="w-full" />
+            <ProtonTricksErrorMessage v-if="protonTricksError" class="w-full">
+              <div class="flex flex-row justify-end w-full mt-2.5">
+                <div class="font-bold text-secondary hover:opacity-80 transition-opacity cursor-pointer" @click="protonTricksError = false">
+                  Скрыть
+                </div>
+              </div>
+            </ProtonTricksErrorMessage>
             <UpdateAvailableMessage :version="remoteVersion" v-if="updateAvailable && !updateStarted && !hideUpdate" class="w-full">
               <div class="flex flex-row justify-between w-full mt-2.5">
                 <div class="font-bold hover:opacity-80 transition-opacity cursor-pointer" @click="update()">
@@ -570,18 +700,17 @@ onMounted(async () => {
                 </div>
               </div>
             </UpdateAvailableMessage>
-            <LauncherUpdatingMessage class="w-full" v-if="launcherUpdate" />
           </transition-group>
           <div class="flex flex-row gap-2.5">
             <Button
               @click="processButtonClick"
               class="font-bold text-4xl text-primary tracking-wider uppercase min-w-73"
               :class="{
-                'cursor-pointer': !isGameStarting && !updateStarted,
-                'cursor-not-allowed text-secondary pointer-events-none': isGameStarting || updateStarted,
+                'cursor-pointer': !isGameStarting && !updateStarted && !updateDownloadStarted && !updateUnpackStarted,
+                'cursor-not-allowed text-secondary pointer-events-none': isGameStarting || updateStarted || updateDownloadStarted || updateUnpackStarted,
               }"
             >
-              {{ needsFirstInstall ? 'Обновить' : (firstStart && !hideUpdate ? 'Обновить' : 'Играть') }}
+              {{ isGameStarting ? 'Запущено' : (needsFirstInstall ? 'Обновить' : (firstStart && !hideUpdate ? 'Обновить' : 'Играть')) }}
             </Button>
             <DropdownButton
               :same-padding="true"
@@ -592,9 +721,11 @@ onMounted(async () => {
               @open-explorer="openExplorer"
               @open-settings="openSettings"
               @start_game="startGame"
+              @open-recovery="showRecoveryModal = true"
+              @open-protontricks="openProtontricks"
             >
-              <Cog class="w-11 text-primary" />
-            </DropdownButton>
+            <Cog class="w-11 text-primary" />
+          </DropdownButton>
           </div>
           <div class="flex flex-col w-full">
             <div class="flex flex-row w-full">
@@ -644,6 +775,9 @@ onMounted(async () => {
         @toggle-cdn="(val) => currentCdnState = val"
         @close="startFirstInstallFlow" 
       />
+    </Transition>
+    <Transition name="fade-modal">
+      <RecoveryModal v-if="showRecoveryModal" @close="showRecoveryModal = false" />
     </Transition>
   </div>
 </template>

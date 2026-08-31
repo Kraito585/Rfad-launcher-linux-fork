@@ -3,49 +3,73 @@ package graficswitch
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"rfad-launcher-linux/src-wails/downloader"
 	"rfad-launcher-linux/src-wails/utils"
+	fsrswitch "rfad-launcher-linux/src-wails/utils/fsr_switch"
 	"strings"
 )
 
 // SwitchGrafikMod управляет переключением между CommunityShader, ENB, ReShade и т.д.
-func SwitchGrafikMod(ctx context.Context, gameRoot string, newMod string, progressCb func(float64, string)) error {
-	// 1. Очищаем корень игры от старых файлов ENB/ReShade
-	// (Здесь должна быть логика удаления d3d11.dll, dxgi.dll и т.д. из корня игры)
-	// cleanRootFromGraphicsMods(gameRoot)
+func SwitchGrafikMod(ctx context.Context, gameRoot string, newMod string, unpackCb func(float64, string), downloadCb func(float64, float64, string)) error {
+	if unpackCb != nil {
+		unpackCb(0.05, "Очистка от старых графических модов...")
+	}
 
-	// 2. Логика для Community Shaders
+	cleanRootFromGraphicsMods(gameRoot)
+	clearShaderCache(gameRoot)
+
 	if newMod == "CommunityShader" {
-		if progressCb != nil {
-			progressCb(0.1, "Настройка Community Shaders...")
+		if unpackCb != nil {
+			unpackCb(0.1, "Настройка Community Shaders...")
 		}
 
-		// Устанавливаем и получаем точные имена папок
-		csFolder, upFolder, err := installCommunityShadersIfNeeded(ctx, gameRoot, progressCb)
+		// Передаем оба коллбэка
+		csFolder, upFolder, err := installCommunityShadersIfNeeded(ctx, gameRoot, unpackCb, downloadCb)
 		if err != nil {
 			return err
 		}
 
-		// Включаем их в modlist.txt
 		if err := toggleCSInModlist(gameRoot, true, csFolder, upFolder); err != nil {
 			return fmt.Errorf("ошибка обновления modlist.txt: %w", err)
 		}
 
 	} else {
-		// 3. Если выбрали другой мод (или "Нету") — выключаем Community Shaders
 		if err := toggleCSInModlist(gameRoot, false, "", ""); err != nil {
 			slog.Warn("Не удалось отключить Community Shaders", "err", err)
 		}
 
-		// 4. Копируем файлы нового мода из disabledGameFiles
-		// Например: copyPath(filepath.Join(gameRoot, "disabledGameFiles", "GrafikMods", newMod), gameRoot)
+		if newMod != "Нету" && newMod != "None" && newMod != "" {
+			if unpackCb != nil {
+				unpackCb(0.5, fmt.Sprintf("Установка пресета %s...", newMod))
+			}
+
+			modSourcePath := filepath.Join(gameRoot, "disabledGameFiles", "GraphicFiles", newMod)
+
+			if _, err := os.Stat(modSourcePath); !os.IsNotExist(err) {
+				if err := copyDir(modSourcePath, gameRoot); err != nil {
+					return fmt.Errorf("ошибка при копировании файлов мода %s: %w", newMod, err)
+				}
+			} else {
+				slog.Warn("Папка с графическим модом не найдена", "path", modSourcePath)
+			}
+		}
 	}
 
-	if progressCb != nil {
-		progressCb(1.0, "Графический мод успешно изменён")
+	if unpackCb != nil {
+		unpackCb(0.9, "Адаптация разрешения и FSR...")
+	}
+
+	// Синхронизация FSR (как и было)
+	if err := fsrswitch.SyncFSRSettings(ctx, gameRoot, newMod); err != nil {
+		slog.Warn("Не удалось синхронизовать FSR при смене мода", "error", err)
+	}
+
+	if unpackCb != nil {
+		unpackCb(100.0, "Графический мод успешно изменён")
 	}
 
 	return nil
@@ -53,58 +77,45 @@ func SwitchGrafikMod(ctx context.Context, gameRoot string, newMod string, progre
 
 // installCommunityShadersIfNeeded проверяет наличие модов в MO2, и если их нет — находит/качает архивы и распаковывает
 
-func installCommunityShadersIfNeeded(ctx context.Context, gameRoot string, progressCb func(float64, string)) (string, string, error) {
+func installCommunityShadersIfNeeded(ctx context.Context, gameRoot string, unpackCb func(float64, string), downloadCb func(float64, float64, string)) (string, string, error) {
 	modsDir := filepath.Join(gameRoot, "MO2", "mods")
 	downloadDir := filepath.Join(gameRoot, "download")
 
 	var csFolder, upFolder string
 	hasCS, hasUp := false, false
 
-	// 1. Проверяем, установлены ли моды в MO2/mods
 	entries, _ := os.ReadDir(modsDir)
 	for _, e := range entries {
 		if e.IsDir() {
-			if strings.Contains(strings.ToLower(e.Name()), "community shaders") || strings.Contains(strings.ToLower(e.Name()), "communityshader") {
+			nameLower := strings.ToLower(e.Name())
+			if strings.Contains(nameLower, "community shaders") || strings.Contains(nameLower, "communityshader") {
 				hasCS = true
 				csFolder = e.Name()
 			}
-			if strings.Contains(strings.ToLower(e.Name()), "upscaling") {
+			if strings.Contains(nameLower, "upscaling") {
 				hasUp = true
 				upFolder = e.Name()
 			}
 		}
 	}
 
-	// Если оба мода уже установлены, просто возвращаем их имена
 	if hasCS && hasUp {
 		return csFolder, upFolder, nil
 	}
 
-	// 2. Ищем архивы в папке download (т.к. точное имя неизвестно, ищем по вхождению)
 	csArchive := findArchiveByContains(downloadDir, "Community")
 	upArchive := findArchiveByContains(downloadDir, "Upscal")
 
-	// 3. Если архивов нет — вызываем загрузчик
 	if csArchive == "" || upArchive == "" {
-		if progressCb != nil {
-			progressCb(0.2, "Загрузка архивов Community Shaders...")
+		if unpackCb != nil {
+			unpackCb(0.2, "Загрузка архивов Community Shaders...")
 		}
 
-		// === АДАПТЕР КОЛЛБЭКА ===
-		// Приводим функцию из 3 аргументов к 2, игнорируя скорость (speed)
-		var downloadCb func(float64, float64, string)
-		if progressCb != nil {
-			downloadCb = func(p float64, speed float64, msg string) {
-				progressCb(p, msg)
-			}
-		}
-
-		// Передаем gameRoot (как требует новая сигнатура функции) и наш downloadCb
+		// Теперь мы напрямую передаем чистый downloadCb, так как он поддерживает скорость
 		if err := downloader.DownloadCommunityShaders(ctx, gameRoot, false, downloadCb); err != nil {
 			return "", "", fmt.Errorf("ошибка загрузки CS: %w", err)
 		}
 
-		// Повторяем поиск после загрузки
 		csArchive = findArchiveByContains(downloadDir, "Community")
 		upArchive = findArchiveByContains(downloadDir, "Upscal")
 		if csArchive == "" || upArchive == "" {
@@ -112,12 +123,11 @@ func installCommunityShadersIfNeeded(ctx context.Context, gameRoot string, progr
 		}
 	}
 
-	// 4. Распаковка архивов в MO2/mods
 	if !hasCS && csArchive != "" {
-		if progressCb != nil {
-			progressCb(0.5, "Распаковка Community Shaders...")
+		if unpackCb != nil {
+			unpackCb(0.5, "Распаковка Community Shaders...")
 		}
-		folder, err := extractModToMO2(ctx, csArchive, modsDir, progressCb)
+		folder, err := extractModToMO2(ctx, csArchive, modsDir, unpackCb)
 		if err != nil {
 			return "", "", err
 		}
@@ -125,10 +135,10 @@ func installCommunityShadersIfNeeded(ctx context.Context, gameRoot string, progr
 	}
 
 	if !hasUp && upArchive != "" {
-		if progressCb != nil {
-			progressCb(0.7, "Распаковка Upscaler...")
+		if unpackCb != nil {
+			unpackCb(0.7, "Распаковка Upscaler...")
 		}
-		folder, err := extractModToMO2(ctx, upArchive, modsDir, progressCb)
+		folder, err := extractModToMO2(ctx, upArchive, modsDir, unpackCb)
 		if err != nil {
 			return "", "", err
 		}
@@ -203,9 +213,19 @@ func findArchiveByContains(dir, pattern string) string {
 	pattern = strings.ToLower(pattern)
 	entries, _ := os.ReadDir(dir)
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".zip") {
-			if strings.Contains(strings.ToLower(e.Name()), pattern) {
-				return filepath.Join(dir, e.Name())
+		if !e.IsDir() {
+			name := strings.ToLower(e.Name())
+			// Проверяем все возможные форматы архивов, включая .tar.gz и .gz
+			if strings.HasSuffix(name, ".zip") ||
+				strings.HasSuffix(name, ".7z") ||
+				strings.HasSuffix(name, ".rar") ||
+				strings.HasSuffix(name, ".tar.gz") ||
+				strings.HasSuffix(name, ".gz") ||
+				strings.HasSuffix(name, ".tar") {
+
+				if strings.Contains(name, pattern) {
+					return filepath.Join(dir, e.Name())
+				}
 			}
 		}
 	}
@@ -218,7 +238,7 @@ func extractModToMO2(ctx context.Context, archivePath, modsDir string, unpackCb 
 	defer os.RemoveAll(tempDir)
 
 	if err := utils.ExtractArchive(ctx, archivePath, tempDir, unpackCb); err != nil {
-		return "", err
+		return "", fmt.Errorf("сбой экстрактора: %w", err)
 	}
 
 	entries, err := os.ReadDir(tempDir)
@@ -227,18 +247,114 @@ func extractModToMO2(ctx context.Context, archivePath, modsDir string, unpackCb 
 	}
 
 	var modFolderName string
-	// Если внутри архива только одна папка, используем её как папку мода
 	if len(entries) == 1 && entries[0].IsDir() {
 		modFolderName = entries[0].Name()
 		target := filepath.Join(modsDir, modFolderName)
 		os.RemoveAll(target)
-		os.Rename(filepath.Join(tempDir, modFolderName), target)
+		// Обязательно ловим ошибку переименования
+		if err := os.Rename(filepath.Join(tempDir, modFolderName), target); err != nil {
+			return "", fmt.Errorf("ошибка перемещения папки мода: %w", err)
+		}
 	} else {
-		// Иначе создаем папку из названия архива
 		modFolderName = strings.TrimSuffix(filepath.Base(archivePath), filepath.Ext(archivePath))
 		target := filepath.Join(modsDir, modFolderName)
 		os.RemoveAll(target)
-		os.Rename(tempDir, target)
+		// Обязательно ловим ошибку переименования
+		if err := os.Rename(tempDir, target); err != nil {
+			return "", fmt.Errorf("ошибка перемещения папки мода: %w", err)
+		}
 	}
 	return modFolderName, nil
+}
+
+func cleanRootFromGraphicsMods(gameRoot string) {
+	filesToRemove := []string{
+		"d3d11.dll",
+		"dxgi.dll",
+		"enblocal.ini",
+		"enbseries.ini",
+		"enbseries",
+		"reshade-shaders",
+		"ReShade.ini",
+		"ReShadePreset.ini",
+		"dxgi.log",
+	}
+
+	for _, item := range filesToRemove {
+		targetPath := filepath.Join(gameRoot, item)
+		if err := os.RemoveAll(targetPath); err != nil {
+			slog.Warn("Ошибка при удалении файла графического мода", "file", item, "err", err)
+		}
+	}
+	slog.Info("Корень игры очищен от старых графических модов")
+}
+func copyDir(src string, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Вычисляем относительный путь
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+
+		targetPath := filepath.Join(dst, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(targetPath, info.Mode())
+		}
+
+		// Если это файл, копируем его
+		return copyFile(path, targetPath)
+	})
+}
+
+// copyFile - простая утилита для физического копирования файла
+func copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, sourceFile)
+	return err
+}
+
+func clearShaderCache(gameRoot string) {
+	prefixPath := filepath.Join(gameRoot, "wine", "prefix", "pfx")
+
+	// 1. Папка кэша, которую мы задаем в start.sh
+	customCachePath := filepath.Join(prefixPath, "shadercache")
+
+	// 2. Дефолтная папка DXVK в Windows (та, что мелькает в логе)
+	appDataDxvkPath := filepath.Join(prefixPath, "drive_c", "users", "steamuser", "AppData", "Local", "dxvk")
+
+	pathsToClean := []string{customCachePath, appDataDxvkPath}
+
+	for _, targetDir := range pathsToClean {
+		// Сносим папку с кэшем и тут же создаем пустую
+		if err := os.RemoveAll(targetDir); err == nil {
+			os.MkdirAll(targetDir, 0755)
+		}
+	}
+
+	// 3. На всякий случай ищем и удаляем файлы *.dxvk-cache в корне игры
+	entries, err := os.ReadDir(gameRoot)
+	if err == nil {
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".dxvk-cache") {
+				os.Remove(filepath.Join(gameRoot, e.Name()))
+			}
+		}
+	}
+	slog.Info("Кэш шейдеров DXVK успешно очищен")
 }

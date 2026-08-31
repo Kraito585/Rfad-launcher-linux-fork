@@ -1,10 +1,10 @@
 const client_manifest = {
-  "_Dd2NAorf.js": {
+  "_DZAKkeYN.js": {
     "resourceType": "script",
     "module": true,
     "prefetch": true,
     "preload": true,
-    "file": "Dd2NAorf.js",
+    "file": "DZAKkeYN.js",
     "name": "nuxt-link",
     "imports": [
       "node_modules/nuxt/dist/app/entry.js"
@@ -71,12 +71,12 @@ const client_manifest = {
     "module": true,
     "prefetch": true,
     "preload": true,
-    "file": "CEOhdN0T.js",
+    "file": "CBA8v1-E.js",
     "name": "error-404",
     "src": "node_modules/nuxt/dist/app/components/error-404.vue",
     "isDynamicEntry": true,
     "imports": [
-      "_Dd2NAorf.js",
+      "_DZAKkeYN.js",
       "node_modules/nuxt/dist/app/entry.js"
     ],
     "css": [
@@ -94,7 +94,7 @@ const client_manifest = {
     "module": true,
     "prefetch": true,
     "preload": true,
-    "file": "CS2Bc8Ea.js",
+    "file": "DFL4l9yt.js",
     "name": "error-500",
     "src": "node_modules/nuxt/dist/app/components/error-500.vue",
     "isDynamicEntry": true,
@@ -116,7 +116,7 @@ const client_manifest = {
     "module": true,
     "prefetch": true,
     "preload": true,
-    "file": "tuwe5aWb.js",
+    "file": "BGNUg-J-.js",
     "name": "entry",
     "src": "node_modules/nuxt/dist/app/entry.js",
     "isEntry": true,
@@ -125,7 +125,7 @@ const client_manifest = {
       "node_modules/nuxt/dist/app/components/error-500.vue"
     ],
     "css": [
-      "entry.DfgFuGUc.css"
+      "entry.DA3Wdz5-.css"
     ],
     "assets": [
       "FuturaPT-Light.BfLY5UcA.woff2",
@@ -138,8 +138,8 @@ const client_manifest = {
       "bg.DDO9NYuT.webp"
     ]
   },
-  "entry.DfgFuGUc.css": {
-    "file": "entry.DfgFuGUc.css",
+  "entry.DA3Wdz5-.css": {
+    "file": "entry.DA3Wdz5-.css",
     "resourceType": "style",
     "prefetch": true,
     "preload": true
@@ -190,16 +190,16 @@ const client_manifest = {
     "module": true,
     "prefetch": true,
     "preload": true,
-    "file": "YElH6Xdo.js",
+    "file": "CAFInt_x.js",
     "name": "index",
     "src": "pages/index.vue",
     "isDynamicEntry": true,
     "imports": [
       "node_modules/nuxt/dist/app/entry.js",
-      "_Dd2NAorf.js"
+      "_DZAKkeYN.js"
     ],
     "css": [
-      "index.Cc8aHrXh.css"
+      "index.BRvWqZZ5.css"
     ],
     "assets": [
       "Matrona.B_dM4iPr.webp",
@@ -212,8 +212,8 @@ const client_manifest = {
       "HubotSans-BlackItalic.C8830oaS.woff2"
     ]
   },
-  "index.Cc8aHrXh.css": {
-    "file": "index.Cc8aHrXh.css",
+  "index.BRvWqZZ5.css": {
+    "file": "index.BRvWqZZ5.css",
     "resourceType": "style",
     "prefetch": true,
     "preload": true

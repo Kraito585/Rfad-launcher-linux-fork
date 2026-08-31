@@ -4,6 +4,8 @@ import {core} from '../models';
 
 export function BrowserOpenURL(arg1:string):Promise<void>;
 
+export function CheckCSFilesExist():Promise<boolean>;
+
 export function FirstInstall():Promise<void>;
 
 export function GetAppVersion():Promise<string>;
@@ -30,11 +32,19 @@ export function IsPathExist():Promise<boolean>;
 
 export function LoadPatches():Promise<string>;
 
+export function Minimize():Promise<void>;
+
 export function OpenExplorer():Promise<void>;
 
 export function OpenMO2():Promise<void>;
 
+export function OpenProtonTrics():Promise<void>;
+
+export function Quit():Promise<void>;
+
 export function ReadFile(arg1:string):Promise<string>;
+
+export function RecoverComponent(arg1:string,arg2:boolean):Promise<void>;
 
 export function RunCommand(arg1:string,arg2:Array<string>):Promise<string>;
 
