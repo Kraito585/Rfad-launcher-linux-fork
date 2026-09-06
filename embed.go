@@ -2,7 +2,7 @@ package main
 
 import "embed"
 
-//go:embed embed/credentials.json embed/start.sh embed/innoextract embed/libs.zip
+//go:embed embed/credentials.json embed/start.sh embed/innoextract embed/libs.zip embed/config.json
 var bundledAssets embed.FS
 
 func getCreds() []byte {
@@ -23,4 +23,9 @@ func getInnoextract() []byte {
 func getLibs() []byte {
 	libs, _ := bundledAssets.ReadFile("embed/libs.zip")
 	return libs
+}
+
+func getOfflineConfig() []byte {
+	offlineConfig, _ := bundledAssets.ReadFile("embed/config.json")
+	return offlineConfig
 }

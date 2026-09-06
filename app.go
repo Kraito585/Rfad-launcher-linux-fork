@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -99,46 +100,92 @@ func (a *App) GetLocalVersion() string {
 
 	return version
 }
+
 func (a *App) GetRemoteVersion() string {
 	slog.Info("GetRemoteVersion called")
 
-	// Настраиваем HTTP-клиент с таймаутом, чтобы лаунчер не зависал при проблемах с сетью
+	cfg, err := core.GetLauncherConfig(GetGameRoot())
+	if err != nil {
+		slog.Warn("Не удалось прочитать конфиг, используем загрузку по умолчанию (GDrive)", "err", err)
+		if cfg == nil {
+			cfg = &core.LauncherConfig{CDN: false}
+		}
+	}
+
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
 
-	resp, err := client.Get("https://api.kraito.ru/api/v1/updates/latest")
+	downloadType := "gdrive"
+	if cfg.CDN {
+		downloadType = "cdn"
+	}
+
+	if downloadType == "cdn" {
+
+		resp, err := client.Get("https://api.kraito.ru/api/v1/updates/latest")
+		if err != nil {
+			slog.Warn("Не удалось подключиться к серверу API", "err", err)
+			return "NetError"
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			slog.Warn("Сервер API вернул статус-код", "code", resp.StatusCode)
+			return "NetError"
+		}
+
+		var apiResult struct {
+			Success bool `json:"success"`
+			Data    struct {
+				Version string `json:"version"`
+			} `json:"data"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&apiResult); err != nil {
+			slog.Warn("Ошибка парсинга ответа от сервера API", "err", err)
+			return "NetError"
+		}
+
+		if !apiResult.Success || apiResult.Data.Version == "" {
+			slog.Warn("Сервер API вернул success: false или пустую версию")
+			return "0.0"
+		}
+		slog.Info("Получена актуальная версия с сервера", "version", apiResult.Data.Version)
+		return apiResult.Data.Version
+
+	}
+
+	docID := "17qsV5xDeJZyGZNFbxm3eZ50DYYm1URAvvhx588fAiSo"
+	exportURL := fmt.Sprintf("https://docs.google.com/document/d/%s/export?format=txt", docID)
+
+	resp, err := client.Get(exportURL)
 	if err != nil {
-		slog.Warn("Не удалось подключиться к серверу API", "err", err)
-		return "NetError" // Фронтенд подхватит это и покажет нужную ошибку
+		slog.Warn("Не удалось подключиться к Google Docs", "err", err)
+		return "DriveError"
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		slog.Warn("Сервер API вернул статус-код", "code", resp.StatusCode)
-		return "NetError"
+		slog.Warn("Google Docs вернул статус-код", "code", resp.StatusCode)
+		return "DriveError"
 	}
 
-	// Создаем структуру только для нужных нам полей
-	var apiResult struct {
-		Success bool `json:"success"`
-		Data    struct {
-			Version string `json:"version"`
-		} `json:"data"`
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		slog.Warn("Ошибка чтения ответа от Google Docs", "err", err)
+		return "DriveError"
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&apiResult); err != nil {
-		slog.Warn("Ошибка парсинга ответа от сервера API", "err", err)
-		return "NetError"
-	}
+	version := strings.TrimSpace(string(bodyBytes))
 
-	if !apiResult.Success || apiResult.Data.Version == "" {
-		slog.Warn("Сервер API вернул success: false или пустую версию")
+	if version == "" {
+		slog.Warn("Google Docs вернул пустую строку")
 		return "0.0"
 	}
 
-	slog.Info("Получена актуальная версия с сервера", "version", apiResult.Data.Version)
-	return apiResult.Data.Version
+	slog.Info("Получена актуальная версия из Google Docs", "version", version)
+	return version
 }
 
 func (a *App) LoadPatches() string {
@@ -178,31 +225,26 @@ func (a *App) LoadPatches() string {
 			continue
 		}
 
-		// Ищем заголовок патча, например [13.07] или [11.08 beta]
-		// Ограничиваем длину endIdx > 3, чтобы случайно не захватить сноски Google Docs вроде [1]
 		if strings.HasPrefix(line, "[") {
 			endIdx := strings.Index(line, "]")
 			if endIdx > 3 && endIdx < 50 {
-				// Если до этого мы собирали стабильный патч, сохраняем его
 				if currentPatch != nil && !skipCurrent {
 					currentPatch.Description = strings.TrimSpace(descBuilder.String())
 					patches = append(patches, *currentPatch)
 				}
 
-				descBuilder.Reset() // Очищаем буфер для нового патча
+				descBuilder.Reset()
 
 				lineLower := strings.ToLower(line)
-				// Игнорируем блоки "в разработке", "beta" и т.д.
 				if strings.Contains(lineLower, "в разработке") || strings.Contains(lineLower, "beta") {
 					skipCurrent = true
 					currentPatch = nil
 					continue
 				}
 
-				// Парсим заголовок стабильного патча
-				versionStr := line[1:endIdx] // Достаем саму версию, например "13.07"
+				versionStr := line[1:endIdx]
 
-				nameStr := strings.TrimSpace(line[endIdx+1:]) // Достаем приписку, например "(новая игра не нужна)"
+				nameStr := strings.TrimSpace(line[endIdx+1:])
 				if nameStr == "" {
 					nameStr = "Обновление " + versionStr
 				}
@@ -215,17 +257,14 @@ func (a *App) LoadPatches() string {
 					Name:    nameStr,
 					URL:     "https://docs.google.com/document/d/1W2fnMXCORWJJu157EwMQP1xAC-qN0_Ke0LS4Hvo58FQ/edit?tab=t.0",
 				}
-				continue // Переходим к следующей строке (описанию)
 			}
 		}
 
-		// Это строка с описанием (буллит), добавляем её к текущему патчу
 		if !skipCurrent && currentPatch != nil {
 			descBuilder.WriteString(line + "\n")
 		}
 	}
 
-	// Не забываем сохранить самый последний собранный блок, когда файл закончился
 	if currentPatch != nil && !skipCurrent {
 		currentPatch.Description = strings.TrimSpace(descBuilder.String())
 		patches = append(patches, *currentPatch)
@@ -339,7 +378,7 @@ func (a *App) OpenMO2() error {
 
 	var mo2Args string
 
-	if err := core.StartMO2(a.ctx, gameRoot, scriptContent, mo2Args); err != nil {
+	if err := core.StartMO2(a.ctx, gameRoot, scriptContent, mo2Args, false); err != nil {
 		slog.Error("StartMO2 failed", "error", err)
 		return err
 	}
@@ -364,11 +403,33 @@ func (a *App) StartGame() error {
 	scriptContent := string(scriptBytes)
 
 	mo2Args := "moshortcut://:SKSE"
+	enableGamescope := false
 
-	if err := core.StartMO2(a.ctx, gameRoot, scriptContent, mo2Args); err != nil {
+	// Читаем конфиг, чтобы понять, нужен ли нам Gamescope для FSR
+	cfg, err := core.GetLauncherConfig(gameRoot)
+	if err == nil && cfg != nil {
+		// Проверяем условия: включен Wine FSR и это НЕ CommunityShader
+		if cfg.FSR && cfg.GrafikMod != "CommunityShader" {
+			if _, err := exec.LookPath("gamescope"); err != nil {
+				slog.Warn("Gamescope требуется для FSR, но не найден в системе. Отправляем уведомление в UI.")
+				// Отправляем сигнал во Vue для отображения компонента GamescopeErrorMessage
+				wailsRuntime.EventsEmit(a.ctx, "gamescope-missing")
+				enableGamescope = false
+			} else {
+				slog.Info("Gamescope найден в системе, активируем.")
+				enableGamescope = true
+			}
+		}
+	} else {
+		slog.Warn("Не удалось прочитать конфиг перед запуском игры", "error", err)
+	}
+
+	// Передаем вычисленный флаг enableGamescope 5-м аргументом
+	if err := core.StartMO2(a.ctx, gameRoot, scriptContent, mo2Args, enableGamescope); err != nil {
 		slog.Error("StartGame failed", "error", err)
 		return err
 	}
+
 	return nil
 }
 
@@ -488,6 +549,7 @@ func (a *App) FirstInstall() error { ///Патчи совместимости д
 	slog.Info("Начало полного процесса установки (Загрузка + Распаковка)")
 	gameRoot := GetGameRoot()
 	creds := getCreds()
+	offlineConfig := getOfflineConfig()
 
 	// 1. Сигнализируем фронтенду, что началась загрузка
 	wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "download-started"})
@@ -501,7 +563,7 @@ func (a *App) FirstInstall() error { ///Патчи совместимости д
 		})
 	}
 
-	if err := core.FirstDownload(a.ctx, gameRoot, creds, downloadCb); err != nil {
+	if err := core.FirstDownload(a.ctx, gameRoot, creds, offlineConfig, downloadCb); err != nil {
 		slog.Error("Ошибка при скачивании", "error", err)
 		return err
 	}
@@ -732,11 +794,15 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 
 	case "fsrLvl":
 		fsrLvlStr := fmt.Sprintf("%v", value)
-		err := fsrswitch.ApplyFsrPatches(a.ctx, gameRoot, fsrLvlStr)
+
+		utils.SetOneSetting(gameRoot, "FsrLvl:", value)
+		err := fsrswitch.SyncFSRSettings(a.ctx, gameRoot, fsrLvlStr)
 		if err != nil {
+			utils.SetOneSetting(gameRoot, "FsrLvl:", true)
 			return err
 		}
-		return utils.SetOneSetting(gameRoot, "FsrLvl:", value)
+
+		return nil
 
 	default:
 		slog.Warn("Unknown setting key received", "key", key)

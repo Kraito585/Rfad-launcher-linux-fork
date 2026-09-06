@@ -36,93 +36,6 @@ func getBaseResolution(ctx context.Context, gameRoot string) (float64, float64) 
 	return width, height
 }
 
-func ApplyFsrPatches(ctx context.Context, gameRoot string, fsrLvl string) error {
-	grafikMod, _ := utils.GetOneSetting(gameRoot, "GrafikMod:")
-	grafikMod = strings.TrimSpace(grafikMod)
-
-	useFSRStr, _ := utils.GetOneSetting(gameRoot, "FSR:")
-	useFSR := strings.TrimSpace(useFSRStr) == "true"
-
-	var patches []config_patcher.ConfigPatch
-
-	if useFSR && grafikMod == "CommunityShader" {
-		qualityMode := 0
-		switch fsrLvl {
-		case "95":
-			qualityMode = 0
-		case "75":
-			qualityMode = 1
-		case "50":
-			qualityMode = 2
-		case "25":
-			qualityMode = 3
-		default:
-			qualityMode = 0
-		}
-
-		// Обрати внимание: сохраняем оригинальные отступы мода (2 пробела)
-		fsrLevelStr := fmt.Sprintf(`  "qualityMode": %d,`, qualityMode)
-		patches = append(patches, config_patcher.ConfigPatch{
-			TargetFile: "MO2/overwrite/SKSE/Plugins/CommunityShaders/SettingsUser.json",
-			ReplacePrefix: map[string]string{
-				`"qualityMode":`: fsrLevelStr,
-			},
-		})
-
-	} else if useFSR && grafikMod != "CommunityShader" {
-		// Читаем базовое (нативное) разрешение из конфига или получаем через Wails
-		baseWidth, baseHeight := getBaseResolution(ctx, gameRoot)
-
-		multiplier := 1.0
-		switch fsrLvl {
-		case "95":
-			multiplier = 0.95
-		case "75":
-			multiplier = 0.75
-		case "50":
-			multiplier = 0.50
-		case "25":
-			multiplier = 0.25
-		default:
-			multiplier = 0.95
-		}
-
-		finalW := fmt.Sprintf("%d", int(baseWidth*multiplier))
-		finalH := fmt.Sprintf("%d", int(baseHeight*multiplier))
-
-		// Патчим SkyrimPrefs.ini через префиксы
-		patches = append(patches, config_patcher.ConfigPatch{
-			TargetFile: "MO2/profiles/RFAD_SE/SkyrimPrefs.ini",
-			ReplacePrefix: map[string]string{
-				"iSize W=": fmt.Sprintf("iSize W=%s", finalW),
-				"iSize H=": fmt.Sprintf("iSize H=%s", finalH),
-			},
-		})
-
-		// Патчим SSE Display Tweaks (здесь комбинируем точный Replace и ReplacePrefix)
-		resString := fmt.Sprintf("Resolution = %sx%s", finalW, finalH)
-		patches = append(patches, config_patcher.ConfigPatch{
-			TargetFile: "MO2/mods/SSE Display Tweaks/SKSE/Plugins/SSEDisplayTweaks.ini",
-			Replace: map[string]string{
-				"Fullscreen = false": "Fullscreen = true",
-				"Borderless = true":  "Borderless = false",
-			},
-			ReplacePrefix: map[string]string{
-				"Resolution =": resString,
-			},
-		})
-	}
-
-	if len(patches) > 0 {
-		_, err := config_patcher.ApplyPatchesFromJSON(gameRoot, patches, nil)
-		if err != nil {
-			return fmt.Errorf("ошибка при применении патчей FSR: %w", err)
-		}
-	}
-
-	return nil
-}
-
 func SyncFSRSettings(ctx context.Context, gameRoot string, grafikMod string) error {
 	grafikMod = strings.TrimSpace(grafikMod)
 	useFSRStr, _ := utils.GetOneSetting(gameRoot, "FSR:")
@@ -135,9 +48,10 @@ func SyncFSRSettings(ctx context.Context, gameRoot string, grafikMod string) err
 	var patches []config_patcher.ConfigPatch
 
 	if grafikMod == "CommunityShader" {
+		// ==========================================
 		// --- ЛОГИКА COMMUNITY SHADERS ---
+		// ==========================================
 
-		// 1. Формируем патч для настроек самого Community Shaders
 		csSettingsPatch := config_patcher.ConfigPatch{
 			TargetFile:    "MO2/overwrite/SKSE/Plugins/CommunityShaders/SettingsUser.json",
 			ReplacePrefix: make(map[string]string),
@@ -155,37 +69,39 @@ func SyncFSRSettings(ctx context.Context, gameRoot string, grafikMod string) err
 			case "25":
 				qualityMode = 4
 			}
-
-			// Включаем FSR и задаем качество
 			csSettingsPatch.ReplacePrefix[`"qualityMode":`] = fmt.Sprintf(`  "qualityMode": %d,`, qualityMode)
 			csSettingsPatch.ReplacePrefix[`"frameGenerationMode":`] = `  "frameGenerationMode": 1,`
 		} else {
-			// Отключаем FSR
 			csSettingsPatch.ReplacePrefix[`"frameGenerationMode":`] = `  "frameGenerationMode": 0,`
 		}
 		patches = append(patches, csSettingsPatch)
 
-		// 2. Возвращаем нативное разрешение экрана (100%)
 		finalW := fmt.Sprintf("%d", int(baseWidth))
 		finalH := fmt.Sprintf("%d", int(baseHeight))
 		resString := fmt.Sprintf("Resolution = %sx%s", finalW, finalH)
 
+		// Для SkyrimPrefs ВСЕГДА оставляем bFull Screen=0 (требование Display Tweaks)
 		patches = append(patches, config_patcher.ConfigPatch{
 			TargetFile: "MO2/profiles/RFAD_SE/SkyrimPrefs.ini",
 			ReplacePrefix: map[string]string{
-				"iSize W=": fmt.Sprintf("iSize W=%s", finalW),
-				"iSize H=": fmt.Sprintf("iSize H=%s", finalH),
+				"iSize W=":      fmt.Sprintf("iSize W=%s", finalW),
+				"iSize H=":      fmt.Sprintf("iSize H=%s", finalH),
+				"bFull Screen=": "bFull Screen=0",
+				"bBorderless=":  "bBorderless=1",
 			},
 		})
 
 		patches = append(patches, config_patcher.ConfigPatch{
 			TargetFile: "MO2/mods/SSE Display Tweaks/SKSE/Plugins/SSEDisplayTweaks.ini",
+			Replace: map[string]string{
+				"Fullscreen = true":  "Fullscreen = false",
+				"Borderless = false": "Borderless = true",
+			},
 			ReplacePrefix: map[string]string{
 				"Resolution =": resString,
 			},
 		})
 
-		// 3. ОТКЛЮЧАЕМ EVLaS при использовании Community Shaders
 		patches = append(patches, config_patcher.ConfigPatch{
 			TargetFile: "MO2/profiles/RFAD_SE/modlist.txt",
 			Replace: map[string]string{
@@ -194,9 +110,14 @@ func SyncFSRSettings(ctx context.Context, gameRoot string, grafikMod string) err
 		})
 
 	} else {
+		// ==========================================
 		// --- ЛОГИКА ДЛЯ ENB ИЛИ ВАНИЛЛЫ ---
+		// ==========================================
 		multiplier := 1.0
+		isWineFullscreen := false
+
 		if useFSR {
+			isWineFullscreen = true
 			switch fsrLvl {
 			case "95":
 				multiplier = 0.95
@@ -209,31 +130,47 @@ func SyncFSRSettings(ctx context.Context, gameRoot string, grafikMod string) err
 			}
 		}
 
-		// Высчитываем сжатое разрешение для Wine FSR
 		finalW := fmt.Sprintf("%d", int(baseWidth*multiplier))
 		finalH := fmt.Sprintf("%d", int(baseHeight*multiplier))
 		resString := fmt.Sprintf("Resolution = %sx%s", finalW, finalH)
 
+		// Снова, SkyrimPrefs.ini не трогаем в плане рамок — только разрешение!
 		patches = append(patches, config_patcher.ConfigPatch{
 			TargetFile: "MO2/profiles/RFAD_SE/SkyrimPrefs.ini",
 			ReplacePrefix: map[string]string{
-				"iSize W=": fmt.Sprintf("iSize W=%s", finalW),
-				"iSize H=": fmt.Sprintf("iSize H=%s", finalH),
+				"iSize W=":      fmt.Sprintf("iSize W=%s", finalW),
+				"iSize H=":      fmt.Sprintf("iSize H=%s", finalH),
+				"bFull Screen=": "bFull Screen=0", // Обязательно 0!
+				"bBorderless=":  "bBorderless=1",  // Обязательно 1!
 			},
 		})
 
-		patches = append(patches, config_patcher.ConfigPatch{
-			TargetFile: "MO2/mods/SSE Display Tweaks/SKSE/Plugins/SSEDisplayTweaks.ini",
-			Replace: map[string]string{
-				"Fullscreen = false": "Fullscreen = true",
-				"Borderless = true":  "Borderless = false",
-			},
-			ReplacePrefix: map[string]string{
-				"Resolution =": resString,
-			},
-		})
+		if isWineFullscreen {
+			// Эксклюзивный экран запрашиваем ТОЛЬКО через хук Tweaks
+			patches = append(patches, config_patcher.ConfigPatch{
+				TargetFile: "MO2/mods/SSE Display Tweaks/SKSE/Plugins/SSEDisplayTweaks.ini",
+				Replace: map[string]string{
+					"Fullscreen = false": "Fullscreen = true",
+					"Borderless = true":  "Borderless = false",
+				},
+				ReplacePrefix: map[string]string{
+					"Resolution =": resString,
+				},
+			})
+		} else {
+			// Дефолтный оконный безрамочный режим
+			patches = append(patches, config_patcher.ConfigPatch{
+				TargetFile: "MO2/mods/SSE Display Tweaks/SKSE/Plugins/SSEDisplayTweaks.ini",
+				Replace: map[string]string{
+					"Fullscreen = true":  "Fullscreen = false",
+					"Borderless = false": "Borderless = true",
+				},
+				ReplacePrefix: map[string]string{
+					"Resolution =": resString,
+				},
+			})
+		}
 
-		// ВКЛЮЧАЕМ EVLaS обратно
 		patches = append(patches, config_patcher.ConfigPatch{
 			TargetFile: "MO2/profiles/RFAD_SE/modlist.txt",
 			Replace: map[string]string{
@@ -242,7 +179,6 @@ func SyncFSRSettings(ctx context.Context, gameRoot string, grafikMod string) err
 		})
 	}
 
-	// Единоразово применяем весь массив патчей
 	if len(patches) > 0 {
 		_, err := config_patcher.ApplyPatchesFromJSON(gameRoot, patches, nil)
 		if err != nil {

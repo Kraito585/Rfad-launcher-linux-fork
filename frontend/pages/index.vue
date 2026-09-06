@@ -5,6 +5,7 @@ import { EventsOn, BrowserOpenURL } from '~/wailsjs/runtime/runtime';
 import config from '~/config';
 import type { PatchComponentProps } from '~/components/PatchComponent.vue';
 import FirstInstallCdnModal from '~/components/FirstInstallCdnModal.vue';
+import GamescopeErrorMessage from '~/components/GamescopeErrorMessage.vue';
 
 // ===== Состояния для модалки установки =====
 const showInstallModal = ref(false);
@@ -44,6 +45,7 @@ const selectInstallDir = async () => {
 };
 
 // ===== Состояния для модалки CDN =====
+const gamescopeError = ref(false);
 const showFirstInstallCdnModal = ref(false);
 const currentCdnState = ref(false);
 const protonTricksError = ref(false);
@@ -567,8 +569,13 @@ onMounted(async () => {
   EventsOn('unpack-progress', (data: any) => {
     updateUnpackPercentage.value = data.percentage;
   });
-EventsOn('game-exit', () => {
+
+  EventsOn('game-exit', () => {
     isGameStarting.value = false;
+  });
+
+  EventsOn('gamescope-missing', () => {
+    gamescopeError.value = true;
   });
 
   // Глобальный слушатель краша процесса
@@ -690,6 +697,13 @@ EventsOn('game-exit', () => {
                 </div>
               </div>
             </ProtonTricksErrorMessage>
+            <GamescopeErrorMessage v-if="gamescopeError" class="w-full">
+              <div class="flex flex-row justify-end w-full mt-2.5">
+                <div class="font-bold text-secondary hover:opacity-80 transition-opacity cursor-pointer" @click="gamescopeError = false">
+                  Скрыть
+                </div>
+              </div>
+            </GamescopeErrorMessage>
             <UpdateAvailableMessage :version="remoteVersion" v-if="updateAvailable && !updateStarted && !hideUpdate" class="w-full">
               <div class="flex flex-row justify-between w-full mt-2.5">
                 <div class="font-bold hover:opacity-80 transition-opacity cursor-pointer" @click="update()">

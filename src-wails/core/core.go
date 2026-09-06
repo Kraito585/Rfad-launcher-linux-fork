@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -146,7 +148,7 @@ func useNvapi() bool {
 	return hasNVAPI
 }
 
-func StartMO2(ctx context.Context, gameRoot string, scriptContent, mo2Args string) error {
+func StartMO2(ctx context.Context, gameRoot string, scriptContent, mo2Args string, isGameLaunch bool) error {
 	// 1. Считываем настройки лаунчера
 	cfg, err := GetLauncherConfig(gameRoot)
 	if err != nil {
@@ -163,6 +165,21 @@ func StartMO2(ctx context.Context, gameRoot string, scriptContent, mo2Args strin
 	hasNvapi := useNvapi()
 
 	useGamemode := true // Можно тоже вынести в конфиг позже при желании
+
+	// 3. Логика включения Gamescope
+	enableGamescope := false
+
+	// Включаем Gamescope ТОЛЬКО если это запуск ИГРЫ (явный флаг), включен Wine FSR и это НЕ CommunityShader
+	if isGameLaunch && cfg.FSR && cfg.GrafikMod != "CommunityShader" {
+		if _, err := exec.LookPath("gamescope"); err != nil {
+			// Если бинарник не найден, отправляем сигнал на фронтенд для показа уведомления
+			wailsRuntime.EventsEmit(ctx, "gamescope-missing")
+			enableGamescope = false // Запускаем без него
+		} else {
+			// Gamescope найден, даем добро на его использование
+			enableGamescope = true
+		}
+	}
 
 	wineBin := filepath.Join(gameRoot, "wine", "proton", "files", "bin", "wine")
 	exePath := filepath.Join(gameRoot, "MO2", "ModOrganizer.exe")
@@ -201,6 +218,7 @@ func StartMO2(ctx context.Context, gameRoot string, scriptContent, mo2Args strin
 		"ENABLE_NVAPI="+strconv.FormatBool(hasNvapi),
 		"ENABLE_HDR="+strconv.FormatBool(cfg.HDR),
 		"ENABLE_FSR="+strconv.FormatBool(cfg.FSR),
+		"ENABLE_GAMESCOPE="+strconv.FormatBool(enableGamescope), // Передаем вычисленный флаг
 		"ENABLE_MANGOHUD="+strconv.FormatBool(cfg.MangoHud),
 		"ENABLE_SHADER_CACHE="+strconv.FormatBool(cfg.ShaderCache),
 		"USE_GAMEMODE="+strconv.FormatBool(useGamemode),
@@ -257,6 +275,10 @@ func FirstInstall(ctx context.Context, gameRoot string, creds []byte, libs []byt
 		if progressCb != nil {
 			progressCb(p, "Распаковка: "+msg)
 		}
+	}
+
+	if !alreadyInstalled("DisableGameFiles") {
+		saveDisabledGameFiles(gameRoot)
 	}
 
 	if !alreadyInstalled("InstallDllOverrides") {
@@ -319,10 +341,9 @@ func FirstInstall(ctx context.Context, gameRoot string, creds []byte, libs []byt
 	return nil
 }
 
-func FirstDownload(ctx context.Context, gameRoot string, creds []byte, progressCb func(float64, float64, string)) error {
+func FirstDownload(ctx context.Context, gameRoot string, creds []byte, offlineConfig []byte, progressCb func(float64, float64, string)) error {
 	slog.Info("FirstDownload: gameRoot = " + gameRoot)
 
-	// 1. Получаем настройки напрямую из конфига
 	cfg, err := GetLauncherConfig(gameRoot)
 	if err != nil {
 		slog.Warn("Не удалось прочитать конфиг для firstDownload, используем загрузку по умолчанию (GDrive)", "err", err)
@@ -331,13 +352,11 @@ func FirstDownload(ctx context.Context, gameRoot string, creds []byte, progressC
 		}
 	}
 
-	// 2. Определяем тип загрузки
 	downloadType := "gdrive"
 	if cfg.CDN {
 		downloadType = "cdn"
 	}
 
-	// 3. Вызываем функции загрузки (передаем им переменную downloadType)
 	if err := downloader.DownloadUpdate(ctx, gameRoot, downloadType, creds, false, progressCb); err != nil {
 		return err
 	}
@@ -350,24 +369,32 @@ func FirstDownload(ctx context.Context, gameRoot string, creds []byte, progressC
 		return err
 	}
 
-	// Community Shaders качаем только если выбран CDN
 	if cfg.CDN {
 		if err := downloader.DownloadCommunityShaders(ctx, gameRoot, false, progressCb); err != nil {
 			return err
 		}
 	}
 
-	// Эти файлы скачиваются всегда одинаково
 	if err := downloader.DownloadGEProton(ctx, gameRoot, false, progressCb); err != nil {
 		return err
 	}
 
 	if err := downloader.DownloadConfig(ctx, gameRoot, false); err != nil {
-		return err
+		slog.Warn("Не удалось загрузить конфигурацию из сети. Применяем встроенный offlineConfig", "err", err)
+
+		configPath := filepath.Join(gameRoot, "download", "config.json")
+
+		if writeErr := os.WriteFile(configPath, offlineConfig, 0644); writeErr != nil {
+			slog.Error("Критическая ошибка: не удалось записать offlineConfig", "err", writeErr)
+			return fmt.Errorf("ошибка сети (%v) и сбой записи резервного конфига: %w", err, writeErr)
+		}
+
+		slog.Info("Встроенная офлайн-конфигурация успешно применена")
 	}
 
 	return nil
 }
+
 func IsPathExist(ctx context.Context, gameRoot string) (bool, error) {
 	filePath := filepath.Join(gameRoot, "MO2", "ModOrganizer.exe")
 	_, err := os.Stat(filePath)
@@ -379,6 +406,7 @@ func IsPathExist(ctx context.Context, gameRoot string) (bool, error) {
 	}
 	return false, err
 }
+
 func CheckDownloadStatus(destDir, keyword string) (bool, error) {
 	statusFile := filepath.Join(destDir, "download_status.txt")
 	f, err := os.Open(statusFile)
@@ -583,8 +611,6 @@ Loop:
 	_ = os.RemoveAll(appDir)
 	_ = os.RemoveAll(filepath.Join(installPath, "tmp"))
 
-	saveDisabledGameFiles(installPath)
-
 	utils.SetOneSetting(installPath, "linux-patch-complite", "false")
 	utils.SetOneSetting(installPath, "MangoHud:", "false")
 	utils.SetOneSetting(installPath, "FSR:", "false")
@@ -599,6 +625,111 @@ Loop:
 
 	if progressCb != nil {
 		progressCb(1.0, "Установка завершена!")
+	}
+
+	return nil
+}
+
+func hashFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
+}
+
+// copySingleFile аккуратно копирует один файл с принудительным сбросом буферов
+func copySingleFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Sync() // Принудительно записываем данные на диск
+}
+
+// safeCopyAndVerify копирует файл или директорию целиком и сверяет хэши каждого файла
+func safeCopyAndVerify(src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	// Если это директория (например, enbseries) - рекурсивно обходим её
+	if info.IsDir() {
+		return filepath.Walk(src, func(path string, fInfo os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+
+			relPath, err := filepath.Rel(src, path)
+			if err != nil {
+				return err
+			}
+			targetPath := filepath.Join(dst, relPath)
+
+			if fInfo.IsDir() {
+				return os.MkdirAll(targetPath, 0755)
+			}
+
+			// Копируем файл внутри директории
+			if err := copySingleFile(path, targetPath); err != nil {
+				return fmt.Errorf("ошибка копирования %s: %w", path, err)
+			}
+
+			// Сверяем хэши
+			hSrc, err := hashFile(path)
+			if err != nil {
+				return fmt.Errorf("ошибка хэширования исходника %s: %w", path, err)
+			}
+			hDst, err := hashFile(targetPath)
+			if err != nil {
+				return fmt.Errorf("ошибка хэширования копии %s: %w", targetPath, err)
+			}
+
+			if hSrc != hDst {
+				return fmt.Errorf("хэши не совпадают для файла %s", path)
+			}
+
+			return nil
+		})
+	}
+
+	// Если это одиночный файл
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+	if err := copySingleFile(src, dst); err != nil {
+		return fmt.Errorf("ошибка копирования %s: %w", src, err)
+	}
+
+	// Сверка хэшей для одиночного файла
+	hSrc, err := hashFile(src)
+	if err != nil {
+		return fmt.Errorf("ошибка хэширования %s: %w", src, err)
+	}
+	hDst, err := hashFile(dst)
+	if err != nil {
+		return fmt.Errorf("ошибка хэширования копии %s: %w", dst, err)
+	}
+	if hSrc != hDst {
+		return fmt.Errorf("хэши не совпадают для %s", src)
 	}
 
 	return nil
@@ -625,7 +756,6 @@ func saveDisabledGameFiles(installPath string) {
 		"steam_api64.cdx",
 	}
 
-	// Функция для аккуратного перемещения файлов и папок в бэкап
 	moveItem := func(itemName, typeFiles, target string) {
 		src := filepath.Join(installPath, itemName)
 		targetDir := filepath.Join(installPath, "disabledGameFiles", typeFiles, target)
@@ -633,32 +763,42 @@ func saveDisabledGameFiles(installPath string) {
 
 		// Проверяем, существует ли исходный файл или папка
 		if _, err := os.Stat(src); err == nil {
-			// Создаем всю структуру папок (например: disabledGameFiles/SteamDRM/off)
-			os.MkdirAll(targetDir, 0755)
+			slog.Info("Начало резервного копирования", "target", itemName, "to", dst)
 
-			// Удаляем старый файл в папке назначения, чтобы избежать ошибки перезаписи
+			// Удаляем старые остатки в папке назначения, чтобы избежать конфликтов
 			os.RemoveAll(dst)
 
-			// Перемещаем
-			if err := os.Rename(src, dst); err == nil {
-				fmt.Printf("Перемещен [%s/%s]: %s\n", typeFiles, target, itemName)
+			// Шаг 1: Копируем и проверяем целостность хэшей
+			if err := safeCopyAndVerify(src, dst); err != nil {
+				slog.Error("КРИТИЧЕСКАЯ ОШИБКА: Сбой при копировании/верификации. Оригинал НЕ удален",
+					"item", itemName,
+					"err", err,
+				)
+				return // Прерываем операцию, не трогаем оригинал
+			}
+
+			// Шаг 2: Если дошли сюда, копии идентичны. Можно безопасно удалять оригинал
+			slog.Info("Верификация пройдена успешно. Удаляем оригинал", "item", itemName)
+			if err := os.RemoveAll(src); err != nil {
+				slog.Warn("Файлы скопированы, но оригинал не удалось удалить",
+					"item", itemName,
+					"err", err,
+				)
 			} else {
-				fmt.Printf("Ошибка перемещения [%s/%s] %s: %v\n", typeFiles, target, itemName, err)
+				slog.Info("Файл успешно отключен", "item", itemName, "category", typeFiles)
 			}
 		}
 	}
 
-	// Перемещаем файлы ENB
+	// Выполняем отключение модов
 	for _, f := range enbFiles {
 		moveItem(f, "GraphicFiles", "ENB")
 	}
 
-	// Перемещаем файлы ReShade
 	for _, f := range reshadeFiles {
 		moveItem(f, "GraphicFiles", "ReShade")
 	}
 
-	// Перемещаем DRM файлы Steam
 	for _, f := range drmFiles {
 		moveItem(f, "SteamDRM", "off")
 	}

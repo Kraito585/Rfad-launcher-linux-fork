@@ -13,6 +13,7 @@ WINEDLLOVERRIDES_PARAM="${WINEDLLOVERRIDES_PARAM:-concrt140=n;xaudio2_7=n,b;d3d1
 ENABLE_NVAPI="${ENABLE_NVAPI:-false}"
 ENABLE_HDR="${ENABLE_HDR:-false}"
 ENABLE_FSR="${ENABLE_FSR:-false}"
+ENABLE_GAMESCOPE="${ENABLE_GAMESCOPE:-false}"
 ENABLE_MANGOHUD="${ENABLE_MANGOHUD:-false}"
 ENABLE_SHADER_CACHE="${ENABLE_SHADER_CACHE:-true}"
 USE_GAMEMODE="${USE_GAMEMODE:-false}"
@@ -124,6 +125,24 @@ if [ "$ENABLE_MANGOHUD" = "true" ] || [ "$ENABLE_MANGOHUD" = "1" ]; then
         fi
     else
         echo "Внимание: mangohud не установлен, пропускаем."
+    fi
+fi
+
+# === Gamescope ===
+if [ "$ENABLE_GAMESCOPE" = "true" ] || [ "$ENABLE_GAMESCOPE" = "1" ]; then
+    if command -v gamescope &>/dev/null; then
+        # Флаг -f (fullscreen), -e (Steam integration)
+        GAMESCOPE_CMD="gamescope -f --"
+        
+        if [ -z "$EXEC_CMD" ]; then
+            EXEC_CMD="$GAMESCOPE_CMD"
+        else
+            # Добавляем в самое начало цепочки
+            EXEC_CMD="$GAMESCOPE_CMD $EXEC_CMD"
+        fi
+        echo "Gamescope активирован."
+    else
+        echo "Внимание: gamescope запрошен, но не установлен в системе, пропускаем."
     fi
 fi
 
