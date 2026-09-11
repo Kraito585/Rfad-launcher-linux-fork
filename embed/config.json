@@ -46,7 +46,7 @@
     {
         "TargetFile": "MO2/ModOrganizer.ini",
         "Replace": {
-            "lock_gui=": "lock_gui=false"
+            "lock_gui=true": "lock_gui=false"
         }
     }
 ]
