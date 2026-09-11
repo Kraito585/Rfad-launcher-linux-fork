@@ -102,13 +102,8 @@ func InstallUpdate(ctx context.Context, gameRoot string, unpackCb func(float64, 
 	return nil
 }
 
-func DownloadUpdate(ctx context.Context, gameRoot string, creds []byte, useCDN bool, progressCb func(float64, float64, string)) error {
-	downloadType := "gdrive"
-	if useCDN {
-		downloadType = "cdn"
-	}
-
-	err := downloader.DownloadUpdate(ctx, gameRoot, downloadType, creds, true, progressCb)
+func DownloadUpdate(ctx context.Context, gameRoot string, creds []byte, progressCb func(float64, float64, string)) error {
+	err := downloader.DownloadUpdate(ctx, gameRoot, creds, true, progressCb)
 	if err != nil {
 		return fmt.Errorf("ошибка загрузки обновления: %w", err)
 	}

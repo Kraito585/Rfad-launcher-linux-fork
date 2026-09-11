@@ -304,9 +304,6 @@ func (a *App) Update() error {
 	gameRoot := GetGameRoot()
 	creds := getCreds()
 
-	// Читаем настройки, чтобы узнать, включен ли CDN
-	cfg := a.GetGameSettings()
-
 	// ==========================================
 	// 1. ЭТАП ЗАГРУЗКИ ОБНОВЛЕНИЯ
 	// ==========================================
@@ -322,7 +319,7 @@ func (a *App) Update() error {
 	}
 
 	// Передаем cfg.CDN в функцию
-	if err := rfad_update.DownloadUpdate(a.ctx, gameRoot, creds, cfg.CDN, downloadCb); err != nil {
+	if err := rfad_update.DownloadUpdate(a.ctx, gameRoot, creds, downloadCb); err != nil {
 		slog.Error("Ошибка при скачивании обновления", "error", err)
 		return err
 	}
@@ -861,19 +858,6 @@ func (a *App) RecoverComponent(key string, force bool) error {
 
 		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "download-started"})
 
-		cfg, err := core.GetLauncherConfig(gameRoot)
-		if err != nil {
-			slog.Warn("Не удалось прочитать конфиг, используем загрузку по умолчанию (GDrive)", "err", err)
-			if cfg == nil {
-				cfg = &core.LauncherConfig{CDN: false}
-			}
-		}
-
-		downloadType := "gdrive"
-		if cfg.CDN {
-			downloadType = "cdn"
-		}
-
 		downloadCb := func(p float64, speed float64, msg string) {
 			wailsRuntime.EventsEmit(a.ctx, "download-progress", map[string]interface{}{
 				"fileName":         msg,
@@ -883,14 +867,14 @@ func (a *App) RecoverComponent(key string, force bool) error {
 		}
 
 		// 1. Скачиваем Proton
-		err = downloader.DownloadGEProton(a.ctx, gameRoot, true, downloadCb)
+		err := downloader.DownloadGEProton(a.ctx, gameRoot, true, downloadCb)
 		if err != nil {
 			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-error"})
 			return fmt.Errorf("ошибка загрузки proton: %w", err)
 		}
 
 		// 2. Скачиваем Prefix (так как мы его тоже будем сносить)
-		err = downloader.DownloadPrefix(a.ctx, gameRoot, downloadType, getCreds(), true, downloadCb)
+		err = downloader.DownloadPrefix(a.ctx, gameRoot, getCreds(), true, downloadCb)
 		if err != nil {
 			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-error"})
 			return fmt.Errorf("ошибка загрузки префикса: %w", err)
@@ -943,19 +927,6 @@ func (a *App) RecoverComponent(key string, force bool) error {
 
 			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "download-started"})
 
-			cfg, err := core.GetLauncherConfig(gameRoot)
-			if err != nil {
-				slog.Warn("Не удалось прочитать конфиг, используем загрузку по умолчанию", "err", err)
-				if cfg == nil {
-					cfg = &core.LauncherConfig{CDN: false}
-				}
-			}
-
-			downloadType := "gdrive"
-			if cfg.CDN {
-				downloadType = "cdn"
-			}
-
 			downloadCb := func(p float64, speed float64, msg string) {
 				wailsRuntime.EventsEmit(a.ctx, "download-progress", map[string]interface{}{
 					"fileName":         msg,
@@ -964,7 +935,7 @@ func (a *App) RecoverComponent(key string, force bool) error {
 				})
 			}
 
-			err = downloader.DownloadPrefix(a.ctx, gameRoot, downloadType, getCreds(), true, downloadCb)
+			err := downloader.DownloadPrefix(a.ctx, gameRoot, getCreds(), true, downloadCb)
 			if err != nil {
 				wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-error"})
 				return fmt.Errorf("ошибка загрузки префикса: %w", err)

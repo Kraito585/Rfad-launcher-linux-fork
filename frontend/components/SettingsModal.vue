@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import MessageBox from '~/components/base/MessageBox.vue';
 import CloseIcon from '~/components/icons/X.vue';
 import Cog from '~/components/icons/Cog.vue';
-import CdnDonationModal from '~/components/CdnDonationModal.vue';
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -11,11 +10,10 @@ const emit = defineEmits<{
 
 const modalRef = ref<HTMLElement | null>(null);
 const isLoading = ref(true);
-const showDonationModal = ref(false);
-const hasCsFiles = ref(false); // Новое состояние для проверки наличия файлов
+const hasCsFiles = ref(false); // Состояние для проверки наличия файлов Community Shaders
 
 // Дефолтное значение для сброса
-const DEFAULT_WINE_OVERRIDES = 'concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n';
+const DEFAULT_WINE_OVERRIDES = 'concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b';
 
 // Реактивное состояние всех настроек
 const settings = ref({
@@ -24,7 +22,6 @@ const settings = ref({
   shaderCache: false,
   hdr: false,
   steamFix: false,
-  cdn: false,
   fpsLimit: '60',
   wineDllOverrides: '',
   grafikMod: 'Нету',
@@ -59,22 +56,10 @@ const handleClickOutside = (event: MouseEvent) => {
   }
 };
 
-// --- УМНАЯ ЛОГИКА ЗАВИСИМОСТЕЙ ---
-// Если выключают CDN, а выбран CommunityShader, и при этом файлов НЕТ -> сбрасываем на "Нету"
-watch(() => settings.value.cdn, async (newCdn) => {
-  if (!newCdn && settings.value.grafikMod === 'CommunityShader' && !hasCsFiles.value) {
-    settings.value.grafikMod = 'Нету';
-    await sendToBackend('grafikMod', 'Нету');
-  }
-});
-
 // --- ФУНКЦИИ ОТПРАВКИ И ОБРАБОТКИ ---
-const toggleSetting = async (key: 'mangoHud' | 'fsr' | 'shaderCache' | 'hdr' | 'steamFix' | 'cdn') => {
+const toggleSetting = async (key: 'mangoHud' | 'fsr' | 'shaderCache' | 'hdr' | 'steamFix') => {
   settings.value[key] = !settings.value[key];
   await sendToBackend(key, settings.value[key]);
-  if (key === 'cdn' && settings.value.cdn) {
-    showDonationModal.value = true;
-  }
 };
 
 const saveInputSetting = async (key: 'fpsLimit' | 'wineDllOverrides') => {
@@ -88,8 +73,9 @@ const resetWineDllOverrides = async () => {
 };
 
 const setGrafikMod = async (mod: string) => {
-  // Блокируем клик только если нет CDN И нет скачанных файлов
-  if (!settings.value.cdn && mod === 'CommunityShader' && !hasCsFiles.value) return;
+  // Блокируем клик, если выбран CommunityShader, а файлов для него нет на диске
+  if (mod === 'CommunityShader' && !hasCsFiles.value) return;
+  
   settings.value.grafikMod = mod;
   await sendToBackend('grafikMod', mod);
 };
@@ -171,12 +157,6 @@ const sendToBackend = async (key: string, value: boolean | string) => {
                 <span :class="['toggle-thumb', settings.steamFix ? 'translate-x-5' : 'translate-x-0']"></span>
               </button>
             </div>
-            <div class="setting-row">
-              <span class="setting-label">Загрузка CDN</span>
-              <button @click="toggleSetting('cdn')" :class="['toggle-btn', settings.cdn ? 'bg-primary' : 'bg-blockBorder']">
-                <span :class="['toggle-thumb', settings.cdn ? 'translate-x-5' : 'translate-x-0']"></span>
-              </button>
-            </div>
           </div>
 
           <div class="h-px w-full bg-blockBorder my-1"></div>
@@ -232,11 +212,11 @@ const sendToBackend = async (key: string, value: boolean | string) => {
                   v-for="mod in ['Нету', 'ENB', 'ReShade', 'CommunityShader']"
                   :key="mod"
                   @click="setGrafikMod(mod)"
-                  :disabled="mod === 'CommunityShader' && !settings.cdn && !hasCsFiles"
+                  :disabled="mod === 'CommunityShader' && !hasCsFiles"
                   :class="[
                     'flex-1 py-2 rounded-lg font-medium transition-colors text-sm',
                     settings.grafikMod === mod ? 'bg-primary text-gray-900' : 'text-secondary hover:text-primary hover:bg-white/5',
-                    mod === 'CommunityShader' && !settings.cdn && !hasCsFiles ? 'opacity-30 cursor-not-allowed hover:bg-transparent hover:text-secondary' : ''
+                    mod === 'CommunityShader' && !hasCsFiles ? 'opacity-30 cursor-not-allowed hover:bg-transparent hover:text-secondary' : ''
                   ]"
                 >
                   {{ mod }}
@@ -267,10 +247,6 @@ const sendToBackend = async (key: string, value: boolean | string) => {
       </div>
     </MessageBox>
   </div>
-  <CdnDonationModal 
-    v-if="showDonationModal" 
-    @close="showDonationModal = false" 
-  />
 </template>
 
 <style scoped>

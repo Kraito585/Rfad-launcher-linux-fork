@@ -352,45 +352,34 @@ func FirstDownload(ctx context.Context, gameRoot string, creds []byte, offlineCo
 		}
 	}
 
-	downloadType := "gdrive"
-	if cfg.CDN {
-		downloadType = "cdn"
-	}
-
-	if err := downloader.DownloadUpdate(ctx, gameRoot, downloadType, creds, false, progressCb); err != nil {
+	if err := downloader.DownloadUpdate(ctx, gameRoot, creds, false, progressCb); err != nil {
 		return err
 	}
 
-	if err := downloader.DownloadPrefix(ctx, gameRoot, downloadType, creds, false, progressCb); err != nil {
+	if err := downloader.DownloadPrefix(ctx, gameRoot, creds, false, progressCb); err != nil {
 		return err
 	}
 
-	if err := downloader.DownloadSteamfix(ctx, gameRoot, downloadType, creds, false, progressCb); err != nil {
+	if err := downloader.DownloadSteamfix(ctx, gameRoot, creds, false, progressCb); err != nil {
 		return err
 	}
 
-	if cfg.CDN {
-		if err := downloader.DownloadCommunityShaders(ctx, gameRoot, false, progressCb); err != nil {
-			return err
-		}
+	if err := downloader.DownloadCommunityShaders(ctx, gameRoot, false, progressCb); err != nil {
+		return err
 	}
 
 	if err := downloader.DownloadGEProton(ctx, gameRoot, false, progressCb); err != nil {
 		return err
 	}
 
-	if err := downloader.DownloadConfig(ctx, gameRoot, false); err != nil {
-		slog.Warn("Не удалось загрузить конфигурацию из сети. Применяем встроенный offlineConfig", "err", err)
+	configPath := filepath.Join(gameRoot, "download", "config.json")
 
-		configPath := filepath.Join(gameRoot, "download", "config.json")
-
-		if writeErr := os.WriteFile(configPath, offlineConfig, 0644); writeErr != nil {
-			slog.Error("Критическая ошибка: не удалось записать offlineConfig", "err", writeErr)
-			return fmt.Errorf("ошибка сети (%v) и сбой записи резервного конфига: %w", err, writeErr)
-		}
-
-		slog.Info("Встроенная офлайн-конфигурация успешно применена")
+	if writeErr := os.WriteFile(configPath, offlineConfig, 0644); writeErr != nil {
+		slog.Error("Критическая ошибка: не удалось записать offlineConfig", "err", writeErr)
+		return fmt.Errorf("ошибка сети (%v) и сбой записи резервного конфига: %w", err, writeErr)
 	}
+
+	downloader.RewriteStatus(filepath.Join(gameRoot, "download"), "config", configPath)
 
 	return nil
 }

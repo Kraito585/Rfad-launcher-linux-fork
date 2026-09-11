@@ -1,0 +1,66 @@
+pipeline:
+  build-appimage:
+    image: ubuntu:22.04
+    environment:
+      - DEBIAN_FRONTEND=noninteractive
+      # Этот флаг критически важен для Docker: он заставляет linuxdeploy 
+      # распаковывать себя в /tmp вместо попыток примонтировать образ через FUSE
+      - APPIMAGE_EXTRACT_AND_RUN=1
+      - OUTPUT=RFAD-Launcher-x86_64.AppImage
+    commands:
+      # 1. Установка базовых системных зависимостей (включая тот самый webkit2gtk-4.1)
+      - apt-get update
+      - apt-get install -y curl wget git build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev desktop-file-utils file libglib2.0-bin
+
+      # 2. Установка Node.js 20 (нужен для фронтенда Wails)
+      - curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+      - apt-get install -y nodejs
+
+      # 3. Установка Go (например, 1.22.5)
+      - wget https://go.dev/dl/go1.22.5.linux-amd64.tar.gz
+      - tar -C /usr/local -xzf go1.22.5.linux-amd64.tar.gz
+      - export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
+
+      # 4. Установка Wails CLI и компиляция лаунчера
+      - go install github.com/wailsapp/wails/v2/cmd/wails@latest
+      - wails build -platform linux/amd64 -m
+
+      # 5. Подготовка утилит AppImage
+      - wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+      - wget https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk.sh
+      - chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh
+
+      # 6. Создание файловой структуры AppDir (виртуального корня)
+      - mkdir -p AppDir/usr/bin
+      - mkdir -p AppDir/usr/share/applications
+      - mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+      
+      # Копируем бинарник и иконки
+      - cp build/bin/RFADLauncherLinux AppDir/usr/bin/
+      - cp build/appicon.png AppDir/rfad.png
+      - cp build/appicon.png AppDir/usr/share/icons/hicolor/256x256/apps/rfad.png
+      
+      # Генерируем .desktop файл
+      - |
+        cat <<EOF > AppDir/usr/share/applications/rfad.desktop
+        [Desktop Entry]
+        Name=RFAD Launcher
+        Exec=RFADLauncherLinux
+        Icon=rfad
+        Type=Application
+        Categories=Game;
+        EOF
+        
+      # 7. Финальная сборка и упаковка AppImage
+      - ./linuxdeploy-x86_64.AppImage --appdir AppDir -e AppDir/usr/bin/RFADLauncherLinux -d AppDir/usr/share/applications/rfad.desktop -i AppDir/rfad.png --plugin gtk --output appimage
+
+publish-github:
+    image: woodpeckerci/plugin-github-release
+    settings:
+      api_key:
+        from_secret: github_token
+      files:
+        - RFAD-Launcher-x86_64.AppImage
+      title: "RFAD Launcher ${CI_COMMIT_TAG}"
+    when:
+      event: tag

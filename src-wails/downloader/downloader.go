@@ -342,13 +342,10 @@ const (
 	UpdateFolderID            string = "1JUOctbsugh2IIEUCWcBkupXYVYoJMg4G"
 	YandexPrefixURL           string = "https://disk.yandex.ru/d/y3mx1DXn83CbgQ"
 	SteamFixID                string = "17BUNJj1akU-ktCOK7iDVErFMZJK6_sfQ"
-	PrefixFileCDNURL          string = "https://mirror.kraito.ru/rfad/prefix/prefix.tar.gz"
-	SteamFixCDNURL            string = "https://mirror.kraito.ru/rfad/SteamFix/SteamFix.zip"
 	CommunityShaderURL        string = "https://mirror.kraito.ru/rfad/shaders/Community%20Shaders%2086492%201.7.3%202026-06-27T10-38Z%206Xybdafll.tar.gz"
 	CommunityShaderUpsacleURL string = "https://mirror.kraito.ru/rfad/shaders/Upscaling%20156952%201.4.0%202026-05-31T10-27Z%20L5WQbqiov.tar.gz"
 	GEProtonUrl               string = "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-6/GE-Proton11-6-x86_64.tar.gz"
-	ConfigPatchURL            string = "https://api.kraito.ru/api/v1/config"
-	// InnoExtract      string = "https://github.com/dscharrer/innoextract/releases/download/1.9/innoextract-1.9-linux.tar.xz" unused
+	// InnoExtract            string = "https://github.com/dscharrer/innoextract/releases/download/1.9/innoextract-1.9-linux.tar.xz" unused
 )
 
 func alreadyDownloaded(destDir, key string) bool {
@@ -370,7 +367,7 @@ func alreadyDownloaded(destDir, key string) bool {
 	return false
 }
 
-func rewriteStatus(destDir, key string, values ...string) error {
+func RewriteStatus(destDir, key string, values ...string) error {
 	statusFile := filepath.Join(destDir, "download_status.txt")
 
 	var newLines []string
@@ -452,119 +449,49 @@ func removeDownloadedFiles(destDir, key string) error {
 	return os.WriteFile(statusFile, []byte(output), 0644)
 }
 
-func lastUpdateFromCDN(ctx context.Context) (string, error) {
-	type UpdateData struct {
-		ID        string `json:"id"`
-		Version   string `json:"version"`
-		URL       string `json:"url"`
-		CreatedAt int64  `json:"created_at"`
-	}
-
-	type UpdateResponse struct {
-		Success bool       `json:"success"`
-		Data    UpdateData `json:"data"`
-	}
-
-	apiUrl := "https://api.kraito.ru/api/v1/updates/latest"
-
-	req, err := http.NewRequestWithContext(ctx, "GET", apiUrl, nil)
-	if err != nil {
-		return "", err
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("ошибка соединения с сервером: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("сервер вернул статус: %d", resp.StatusCode)
-	}
-
-	var apiResult UpdateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResult); err != nil {
-		return "", fmt.Errorf("ошибка чтения ответа API: %w", err)
-	}
-
-	if !apiResult.Success {
-		return "", fmt.Errorf("API вернул success: false")
-	}
-	s3BaseURL := "https://mirror.kraito.ru/"
-	return s3BaseURL + apiResult.Data.URL, nil
-}
-
-// Сами функции загрузки пакетов
-func DownloadUpdate(ctx context.Context, gameRoot string, downloadType string, creds []byte, forceDownload bool, progressCb func(float64, float64, string)) error {
+func DownloadUpdate(ctx context.Context, gameRoot string, creds []byte, forceDownload bool, progressCb func(float64, float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	key := "update"
 	if !alreadyDownloaded(destDir, key) || forceDownload {
 		removeDownloadedFiles(destDir, key)
-		if downloadType == "cdn" {
-			var path string
-			url, err := lastUpdateFromCDN(ctx)
-			path, err = DownloadURL(ctx, url, destDir, progressCb)
-			if err != nil {
-				return fmt.Errorf("ошибка получения обновления попробуйте использовать google drive %s", err)
-			}
-			return rewriteStatus(destDir, key, path)
-
-		}
 		var paths []string
 		paths, err := DownloadDriveFolder(ctx, creds, UpdateFolderID, destDir, progressCb)
 		if err != nil {
 			return fmt.Errorf("ошибка получения обновления попробуйте использовать cdn(mirror) %s", err)
 		}
-		return rewriteStatus(destDir, key, paths...)
+		return RewriteStatus(destDir, key, paths...)
 	}
 
 	return nil
 }
 
-func DownloadPrefix(ctx context.Context, gameRoot string, downloadType string, creds []byte, forceDownload bool, progressCb func(float64, float64, string)) error {
+func DownloadPrefix(ctx context.Context, gameRoot string, creds []byte, forceDownload bool, progressCb func(float64, float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	key := "prefix"
 	if !alreadyDownloaded(destDir, key) || forceDownload {
 		removeDownloadedFiles(destDir, key)
-		if downloadType == "cdn" {
-			var path string
-			path, err := DownloadURL(ctx, PrefixFileCDNURL, destDir, progressCb)
-			if err != nil {
-				return fmt.Errorf("ошибка получения префикса wine попробуйте использовать google drive %s", err)
-			}
-			return rewriteStatus(destDir, key, path)
-		}
 		var path string
 		path, err := DownloadYandex(ctx, YandexPrefixURL, destDir, "pfx dotnet.7z", progressCb)
 		if err != nil {
 			return fmt.Errorf("ошибка загрузки префикса с Яндекс.Диска: %w", err)
 		}
-		return rewriteStatus(destDir, key, path)
+		return RewriteStatus(destDir, key, path)
 	}
 
 	return nil
 }
 
-func DownloadSteamfix(ctx context.Context, gameRoot string, downloadType string, creds []byte, forceDownload bool, progressCb func(float64, float64, string)) error {
+func DownloadSteamfix(ctx context.Context, gameRoot string, creds []byte, forceDownload bool, progressCb func(float64, float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	key := "steamfix"
 	if !alreadyDownloaded(destDir, key) || forceDownload {
 		removeDownloadedFiles(destDir, key)
-		if downloadType == "cdn" {
-			var path string
-			path, err := DownloadURL(ctx, SteamFixCDNURL, destDir, progressCb)
-			if err != nil {
-				return fmt.Errorf("ошибка получения префикса wine попробуйте использовать google drive %s", err)
-			}
-			return rewriteStatus(destDir, key, path)
-		}
 		var paths []string
 		paths, err := DownloadDriveFolder(ctx, creds, SteamFixID, destDir, progressCb)
 		if err != nil {
 			return fmt.Errorf("ошибка получения префикса wine попробуйте использовать cdn(mirror) %s", err)
 		}
-		return rewriteStatus(destDir, key, paths...)
+		return RewriteStatus(destDir, key, paths...)
 	}
 
 	return nil
@@ -580,60 +507,8 @@ func DownloadGEProton(ctx context.Context, gameRoot string, forceDownload bool, 
 		if err != nil {
 			return fmt.Errorf("Ошибка загрузки GE-Proton повторите попытку позже %s", err)
 		}
-		return rewriteStatus(destDir, key, path)
+		return RewriteStatus(destDir, key, path)
 
-	}
-	return nil
-}
-
-func DownloadConfig(ctx context.Context, gameRoot string, forceDownload bool) error {
-	destDir := filepath.Join(gameRoot, "download")
-	key := "config"
-	if !alreadyDownloaded(destDir, key) || forceDownload {
-		removeDownloadedFiles(destDir, key)
-		type ConfigData struct {
-			Data []json.RawMessage `json:"data"`
-		}
-
-		type ConfigResponse struct {
-			Success bool       `json:"success"`
-			Data    ConfigData `json:"data"`
-		}
-		configFile := filepath.Join(destDir, "config.json")
-
-		req, err := http.NewRequestWithContext(ctx, "GET", ConfigPatchURL, nil)
-		if err != nil {
-			return err
-		}
-
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
-			return fmt.Errorf("ошибка соединения с сервером: %w", err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("сервер вернул статус: %d", resp.StatusCode)
-		}
-
-		var apiResult ConfigResponse
-		if err := json.NewDecoder(resp.Body).Decode(&apiResult); err != nil {
-			return fmt.Errorf("ошибка чтения ответа API: %w", err)
-		}
-
-		if !apiResult.Success {
-			return fmt.Errorf("API вернул success: false")
-		}
-
-		cfgFile, err := os.Create(configFile)
-		jsonData, err := json.MarshalIndent(apiResult.Data.Data, "", "    ")
-		if err != nil {
-			return fmt.Errorf("неудалось пропарсить конфиг с сервера: %w", err)
-		}
-		_, err = cfgFile.Write(jsonData)
-
-		return rewriteStatus(destDir, key, configFile)
 	}
 	return nil
 }
@@ -649,7 +524,7 @@ func DownloadCommunityShaders(ctx context.Context, gameRoot string, forceDownloa
 		if err != nil {
 			return fmt.Errorf("ошибка получения префикса wine попробуйте использовать google drive %s", err)
 		}
-		return rewriteStatus(destDir, key1, path)
+		return RewriteStatus(destDir, key1, path)
 	}
 	if !alreadyDownloaded(destDir, key2) || forceDownload {
 		removeDownloadedFiles(destDir, key2)
@@ -658,7 +533,7 @@ func DownloadCommunityShaders(ctx context.Context, gameRoot string, forceDownloa
 		if err != nil {
 			return fmt.Errorf("ошибка получения префикса wine попробуйте использовать google drive %s", err)
 		}
-		return rewriteStatus(destDir, key2, path)
+		return RewriteStatus(destDir, key2, path)
 	}
 
 	return nil

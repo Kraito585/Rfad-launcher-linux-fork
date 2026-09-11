@@ -4,7 +4,6 @@ import { EventsOn, BrowserOpenURL } from '~/wailsjs/runtime/runtime';
 
 import config from '~/config';
 import type { PatchComponentProps } from '~/components/PatchComponent.vue';
-import FirstInstallCdnModal from '~/components/FirstInstallCdnModal.vue';
 import GamescopeErrorMessage from '~/components/GamescopeErrorMessage.vue';
 
 // ===== Состояния для модалки установки =====
@@ -44,11 +43,10 @@ const selectInstallDir = async () => {
   if (path) installPath.value = path;
 };
 
-// ===== Состояния для модалки CDN =====
+// ===== Ошибки среды =====
 const gamescopeError = ref(false);
-const showFirstInstallCdnModal = ref(false);
-const currentCdnState = ref(false);
 const protonTricksError = ref(false);
+
 const startInstall = async () => {
   if (!installerPath.value || !installPath.value) {
     // Можно показать предупреждение через ShowMessageDialog
@@ -310,7 +308,7 @@ const update = async (isFirstStart: boolean = false) => {
   updateDownloadStarted.value = true;
   updateUnpackStarted.value = false;
 
-  // 3. Подписка на события прогресса (без кривых фильтров по имени)
+  // 3. Подписка на события прогресса
   const unlistenDownload = EventsOn('download-progress', (data: any) => {
     // Поддержка как числа (байты), так и готовой строки (мегабайты) от бэкенда
     if (typeof data.speedBytesPerSec === 'number') {
@@ -372,8 +370,6 @@ const update = async (isFirstStart: boolean = false) => {
 };
 
 const startFirstInstallFlow = async () => {
-  showFirstInstallCdnModal.value = false;
-
   // 1. Правильно инициализируем состояния
   isGameStarting.value = true;
   updateStarted.value = false; // Важно: ставим false, чтобы скрыть верхний (дублирующий) бар!
@@ -384,7 +380,6 @@ const startFirstInstallFlow = async () => {
 
   // 2. ПОДПИСЫВАЕМСЯ на события от бэкенда именно для этого процесса
   const unlistenDownload = EventsOn('download-progress', (data: any) => {
-    // Безопасная обработка скорости (на случай, если бэкенд пришлет число в байтах или уже готовую строку МБ/с)
     if (typeof data.speedBytesPerSec === 'number') {
       updateDownloadSpeed.value = (data.speedBytesPerSec / 1024 / 1024).toFixed(1);
     } else {
@@ -442,18 +437,8 @@ const processButtonClick = async () => {
   }
   
   if (needsFirstInstall.value) {
-    try {
-      // Получаем актуальное состояние CDN из бэкенда перед показом модалки
-      const settingsData = await window.go.main.App.GetGameSettings();
-      const settings = typeof settingsData === 'string' ? JSON.parse(settingsData) : settingsData;
-      currentCdnState.value = settings.cdn || false;
-    } catch (e) {
-      console.error('Не удалось получить настройки CDN:', e);
-      currentCdnState.value = false;
-    }
-    
-    // Показываем модалку вместо моментального старта
-    showFirstInstallCdnModal.value = true;
+    // Моментально запускаем процесс скачивания в обход модального окна CDN
+    await startFirstInstallFlow();
     return;
   }
   
@@ -587,7 +572,6 @@ onMounted(async () => {
 </script>
 
 <template>
-  <!-- Шаблон остаётся без изменений, так как он не зависит от бэкенда -->
   <div class="absolute bottom-0 right-0 opacity-10 hover:opacity-60 transition-opacity z-[100000]">
     <span class="text-primary font-semibold tracking-wide">{{ launcherVersion }}</span>
   </div>
@@ -781,14 +765,6 @@ onMounted(async () => {
     <img alt="Matrona" src="assets/image/Matrona.webp" class="matrona z-10" />
     <Transition name="fade-modal">
       <SettingsModal v-if="isSettingsOpen" @close="closeSettings" />
-    </Transition>
-    <Transition name="fade-modal">
-      <FirstInstallCdnModal 
-        v-if="showFirstInstallCdnModal" 
-        :initial-cdn-state="currentCdnState"
-        @toggle-cdn="(val) => currentCdnState = val"
-        @close="startFirstInstallFlow" 
-      />
     </Transition>
     <Transition name="fade-modal">
       <RecoveryModal v-if="showRecoveryModal" @close="showRecoveryModal = false" />
