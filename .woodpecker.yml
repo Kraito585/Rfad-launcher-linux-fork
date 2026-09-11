@@ -7,6 +7,7 @@ steps:
       # распаковывать себя в /tmp вместо попыток примонтировать образ через FUSE
       APPIMAGE_EXTRACT_AND_RUN: "1"
       OUTPUT: RFAD-Launcher-x86_64.AppImage
+      secrets: [ GOOGLE_CREDENTIALS ]
     commands:
       # 1. Установка базовых системных зависимостей (включая тот самый webkit2gtk-4.1)
       - apt-get update
@@ -23,6 +24,8 @@ steps:
 
       # 4. Установка Wails CLI и компиляция лаунчера
       - go install github.com/wailsapp/wails/v2/cmd/wails@latest
+      - mkdir -p embed
+      - echo "$GOOGLE_CREDENTIALS" > embed/credentials.json
       - wails build -platform linux/amd64 -m
 
       # 5. Подготовка утилит AppImage

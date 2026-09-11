@@ -10,7 +10,6 @@ const emit = defineEmits<{
 
 const modalRef = ref<HTMLElement | null>(null);
 const isLoading = ref(true);
-const hasCsFiles = ref(false); // Состояние для проверки наличия файлов Community Shaders
 
 // Дефолтное значение для сброса
 const DEFAULT_WINE_OVERRIDES = 'concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b';
@@ -36,8 +35,6 @@ onMounted(async () => {
       const parsed = typeof data === 'string' ? JSON.parse(data) : data;
       settings.value = { ...settings.value, ...parsed };
     }
-    // Проверяем наличие файлов в папке download
-    hasCsFiles.value = await window.go.main.App.CheckCSFilesExist();
   } catch (e) {
     console.error('Ошибка загрузки настроек:', e);
   } finally {
@@ -73,9 +70,6 @@ const resetWineDllOverrides = async () => {
 };
 
 const setGrafikMod = async (mod: string) => {
-  // Блокируем клик, если выбран CommunityShader, а файлов для него нет на диске
-  if (mod === 'CommunityShader' && !hasCsFiles.value) return;
-  
   settings.value.grafikMod = mod;
   await sendToBackend('grafikMod', mod);
 };
@@ -212,11 +206,9 @@ const sendToBackend = async (key: string, value: boolean | string) => {
                   v-for="mod in ['Нету', 'ENB', 'ReShade', 'CommunityShader']"
                   :key="mod"
                   @click="setGrafikMod(mod)"
-                  :disabled="mod === 'CommunityShader' && !hasCsFiles"
                   :class="[
                     'flex-1 py-2 rounded-lg font-medium transition-colors text-sm',
-                    settings.grafikMod === mod ? 'bg-primary text-gray-900' : 'text-secondary hover:text-primary hover:bg-white/5',
-                    mod === 'CommunityShader' && !hasCsFiles ? 'opacity-30 cursor-not-allowed hover:bg-transparent hover:text-secondary' : ''
+                    settings.grafikMod === mod ? 'bg-primary text-gray-900' : 'text-secondary hover:text-primary hover:bg-white/5'
                   ]"
                 >
                   {{ mod }}

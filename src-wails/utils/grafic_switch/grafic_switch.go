@@ -246,24 +246,59 @@ func extractModToMO2(ctx context.Context, archivePath, modsDir string, unpackCb 
 		return "", err
 	}
 
+	// Очищаем имя архива от всех возможных расширений (включая двойные вроде .tar.gz)
+	archiveName := filepath.Base(archivePath)
+	exts := []string{".tar.gz", ".zip", ".7z", ".rar", ".gz", ".tar"}
+	for _, ext := range exts {
+		if strings.HasSuffix(strings.ToLower(archiveName), ext) {
+			archiveName = archiveName[:len(archiveName)-len(ext)]
+			break
+		}
+	}
+
 	var modFolderName string
+
+	// Проверяем структуру: есть ли внутри ровно одна папка?
 	if len(entries) == 1 && entries[0].IsDir() {
-		modFolderName = entries[0].Name()
-		target := filepath.Join(modsDir, modFolderName)
-		os.RemoveAll(target)
-		// Обязательно ловим ошибку переименования
-		if err := os.Rename(filepath.Join(tempDir, modFolderName), target); err != nil {
-			return "", fmt.Errorf("ошибка перемещения папки мода: %w", err)
+		dirName := entries[0].Name()
+		dirLower := strings.ToLower(dirName)
+
+		// Список стандартных папок движка игры. Если папка называется так, обертки в архиве нет.
+		isDataDir := dirLower == "skse" || dirLower == "meshes" ||
+			dirLower == "textures" || dirLower == "scripts" ||
+			dirLower == "sound" || dirLower == "interface" ||
+			dirLower == "mwse" || dirLower == "obse" ||
+			dirLower == "f4se" || dirLower == "nvse" ||
+			dirLower == "data" || dirLower == "plugins" ||
+			dirLower == "shaders"
+
+		if isDataDir {
+			// Это не папка-обертка. Берем имя из названия самого архива.
+			modFolderName = archiveName
+			target := filepath.Join(modsDir, modFolderName)
+			os.RemoveAll(target)
+			if err := os.Rename(tempDir, target); err != nil {
+				return "", fmt.Errorf("ошибка перемещения папки мода: %w", err)
+			}
+		} else {
+			// Это действительно папка-обертка (например, "Community Shaders v1.0")
+			modFolderName = dirName
+			target := filepath.Join(modsDir, modFolderName)
+			os.RemoveAll(target)
+			if err := os.Rename(filepath.Join(tempDir, dirName), target); err != nil {
+				return "", fmt.Errorf("ошибка перемещения папки мода: %w", err)
+			}
 		}
 	} else {
-		modFolderName = strings.TrimSuffix(filepath.Base(archivePath), filepath.Ext(archivePath))
+		// Файлов несколько, лежат россыпью в корне (например, SKSE/ + Shaders/ + meta.ini)
+		modFolderName = archiveName
 		target := filepath.Join(modsDir, modFolderName)
 		os.RemoveAll(target)
-		// Обязательно ловим ошибку переименования
 		if err := os.Rename(tempDir, target); err != nil {
 			return "", fmt.Errorf("ошибка перемещения папки мода: %w", err)
 		}
 	}
+
 	return modFolderName, nil
 }
 
