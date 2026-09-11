@@ -1,12 +1,12 @@
-pipeline:
+steps:
   build-appimage:
     image: ubuntu:22.04
     environment:
-      - DEBIAN_FRONTEND=noninteractive
+      DEBIAN_FRONTEND: noninteractive
       # Этот флаг критически важен для Docker: он заставляет linuxdeploy 
       # распаковывать себя в /tmp вместо попыток примонтировать образ через FUSE
-      - APPIMAGE_EXTRACT_AND_RUN=1
-      - OUTPUT=RFAD-Launcher-x86_64.AppImage
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+      OUTPUT: RFAD-Launcher-x86_64.AppImage
     commands:
       # 1. Установка базовых системных зависимостей (включая тот самый webkit2gtk-4.1)
       - apt-get update
@@ -16,7 +16,7 @@ pipeline:
       - curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
       - apt-get install -y nodejs
 
-      # 3. Установка Go (например, 1.22.5)
+      # 3. Установка Go
       - wget https://go.dev/dl/go1.22.5.linux-amd64.tar.gz
       - tar -C /usr/local -xzf go1.22.5.linux-amd64.tar.gz
       - export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
@@ -54,7 +54,8 @@ pipeline:
       # 7. Финальная сборка и упаковка AppImage
       - ./linuxdeploy-x86_64.AppImage --appdir AppDir -e AppDir/usr/bin/RFADLauncherLinux -d AppDir/usr/share/applications/rfad.desktop -i AppDir/rfad.png --plugin gtk --output appimage
 
-publish-github:
+  # Шаг загрузки в GitHub Releases
+  publish-github:
     image: woodpeckerci/plugin-github-release
     settings:
       api_key:
@@ -63,4 +64,4 @@ publish-github:
         - RFAD-Launcher-x86_64.AppImage
       title: "RFAD Launcher ${CI_COMMIT_TAG}"
     when:
-      event: tag
+      - event: tag
