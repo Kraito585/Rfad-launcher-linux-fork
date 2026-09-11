@@ -342,8 +342,8 @@ const (
 	UpdateFolderID            string = "1JUOctbsugh2IIEUCWcBkupXYVYoJMg4G"
 	YandexPrefixURL           string = "https://disk.yandex.ru/d/y3mx1DXn83CbgQ"
 	SteamFixID                string = "17BUNJj1akU-ktCOK7iDVErFMZJK6_sfQ"
-	CommunityShaderURL        string = "https://mirror.kraito.ru/rfad/shaders/Community%20Shaders%2086492%201.7.3%202026-06-27T10-38Z%206Xybdafll.tar.gz"
-	CommunityShaderUpsacleURL string = "https://mirror.kraito.ru/rfad/shaders/Upscaling%20156952%201.4.0%202026-05-31T10-27Z%20L5WQbqiov.tar.gz"
+	CommunityShaderURL        string = "https://github.com/community-shaders/skyrim-community-shaders/releases/download/v1.8.4/CommunityShaders-2026-08-26T23-47Z.zip"
+	CommunityShaderUpsacleURL string = "https://github.com/community-shaders/skyrim-community-shaders/releases/download/v1.8.4/Upscaling-2026-08-26T23-47Z.zip"
 	GEProtonUrl               string = "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-6/GE-Proton11-6-x86_64.tar.gz"
 	// InnoExtract            string = "https://github.com/dscharrer/innoextract/releases/download/1.9/innoextract-1.9-linux.tar.xz" unused
 )
