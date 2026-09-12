@@ -59,7 +59,7 @@ steps:
 
   # Шаг загрузки в GitHub Releases
   publish-github:
-    image: woodpeckerci/plugin-release
+    image: woodpeckerci/plugin-github-release
     settings:
       api_key:
         from_secret: github_token
