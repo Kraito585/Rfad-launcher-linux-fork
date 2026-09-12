@@ -344,13 +344,7 @@ func FirstInstall(ctx context.Context, gameRoot string, creds []byte, libs []byt
 func FirstDownload(ctx context.Context, gameRoot string, creds []byte, offlineConfig []byte, progressCb func(float64, float64, string)) error {
 	slog.Info("FirstDownload: gameRoot = " + gameRoot)
 
-	cfg, err := GetLauncherConfig(gameRoot)
-	if err != nil {
-		slog.Warn("Не удалось прочитать конфиг для firstDownload, используем загрузку по умолчанию (GDrive)", "err", err)
-		if cfg == nil {
-			cfg = &LauncherConfig{CDN: false}
-		}
-	}
+	var err error
 
 	if err := downloader.DownloadUpdate(ctx, gameRoot, creds, false, progressCb); err != nil {
 		return err

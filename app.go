@@ -104,56 +104,8 @@ func (a *App) GetLocalVersion() string {
 func (a *App) GetRemoteVersion() string {
 	slog.Info("GetRemoteVersion called")
 
-	cfg, err := core.GetLauncherConfig(GetGameRoot())
-	if err != nil {
-		slog.Warn("Не удалось прочитать конфиг, используем загрузку по умолчанию (GDrive)", "err", err)
-		if cfg == nil {
-			cfg = &core.LauncherConfig{CDN: false}
-		}
-	}
-
 	client := &http.Client{
 		Timeout: 10 * time.Second,
-	}
-
-	downloadType := "gdrive"
-	if cfg.CDN {
-		downloadType = "cdn"
-	}
-
-	if downloadType == "cdn" {
-
-		resp, err := client.Get("https://api.kraito.ru/api/v1/updates/latest")
-		if err != nil {
-			slog.Warn("Не удалось подключиться к серверу API", "err", err)
-			return "NetError"
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			slog.Warn("Сервер API вернул статус-код", "code", resp.StatusCode)
-			return "NetError"
-		}
-
-		var apiResult struct {
-			Success bool `json:"success"`
-			Data    struct {
-				Version string `json:"version"`
-			} `json:"data"`
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&apiResult); err != nil {
-			slog.Warn("Ошибка парсинга ответа от сервера API", "err", err)
-			return "NetError"
-		}
-
-		if !apiResult.Success || apiResult.Data.Version == "" {
-			slog.Warn("Сервер API вернул success: false или пустую версию")
-			return "0.0"
-		}
-		slog.Info("Получена актуальная версия с сервера", "version", apiResult.Data.Version)
-		return apiResult.Data.Version
-
 	}
 
 	docID := "17qsV5xDeJZyGZNFbxm3eZ50DYYm1URAvvhx588fAiSo"
@@ -591,53 +543,76 @@ func (a *App) FirstInstall() error { ///Патчи совместимости д
 
 func GetGameRoot() string {
 	if testRoot := os.Getenv("RFAD_TEST_GAME_ROOT"); testRoot != "" {
-		slog.Info(testRoot)
+		slog.Info("Используется тестовый путь: " + testRoot)
 		return testRoot
 	}
+
+	if appImagePath := os.Getenv("APPIMAGE"); appImagePath != "" {
+		slog.Info("Запуск из AppImage: " + appImagePath)
+		return filepath.Dir(appImagePath)
+	}
+
 	exe, err := os.Executable()
 	if err != nil {
 		return ""
 	}
-	slog.Info(exe)
+	slog.Info("Стандартный запуск: " + exe)
 	return filepath.Dir(exe)
 }
 
 func (a *App) relaunchToGameRoot(installPath string) error {
-	// Получаем путь к текущему бинарнику
-	exe, err := os.Executable()
-	if err != nil {
-		return err
+	var sourcePath string
+	appImagePath := os.Getenv("APPIMAGE")
+	if appImagePath != "" {
+		sourcePath = appImagePath
+	} else {
+		exe, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		sourcePath = exe
 	}
 
-	// Если уже в корне игры — выходим
-	if filepath.Dir(exe) == installPath {
+	if filepath.Dir(sourcePath) == installPath {
 		slog.Info("Launcher already in game root, skipping copy")
 		return nil
 	}
 
-	// Копируем бинарник в корень игры
-	targetExe := filepath.Join(installPath, filepath.Base(exe))
-	data, err := os.ReadFile(exe)
+	targetExe := filepath.Join(installPath, filepath.Base(sourcePath))
+
+	sourceFile, err := os.Open(sourcePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("не удалось открыть исходный файл: %w", err)
 	}
-	if err := os.WriteFile(targetExe, data, 0755); err != nil {
-		return err
+	defer sourceFile.Close()
+
+	destFile, err := os.OpenFile(targetExe, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
+	if err != nil {
+		return fmt.Errorf("не удалось создать целевой файл: %w", err)
+	}
+	defer destFile.Close()
+
+	if _, err := io.Copy(destFile, sourceFile); err != nil {
+		return fmt.Errorf("ошибка при копировании: %w", err)
 	}
 
-	// Запускаем новую копию
+	destFile.Sync()
+
 	cmd := exec.Command(targetExe)
+	cmd.Dir = installPath
 	cmd.Env = os.Environ()
+
 	if err := cmd.Start(); err != nil {
-		return err
+		return fmt.Errorf("не удалось запустить скопированный лаунчер: %w", err)
 	}
 
-	// Завершаем текущий процесс
 	slog.Info("Relaunching from", "path", targetExe)
+
 	go func() {
 		time.Sleep(500 * time.Millisecond)
 		os.Exit(0)
 	}()
+
 	return nil
 }
 
@@ -730,9 +705,6 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 			return err
 		}
 		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-finished"})
-
-	case "cdn":
-		utils.SetOneSetting(gameRoot, "CDN:", value)
 
 	case "fpsLimit":
 		fpsStr := fmt.Sprintf("%v", value)

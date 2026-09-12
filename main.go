@@ -4,6 +4,7 @@ import (
 	"embed"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -23,15 +24,22 @@ func init() {
 }
 
 func main() {
+	appDir := os.Getenv("APPDIR")
+	if appDir != "" {
+		webkitPath := filepath.Join(appDir, "usr", "lib", "x86_64-linux-gnu", "webkit2gtk-4.1")
+		os.Setenv("WEBKIT_EXEC_PATH", webkitPath)
+		os.Setenv("WEBKIT_INJECTED_BUNDLE_PATH", webkitPath)
+	}
+	// --------------------------------
+
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:            "MyApp",
+		Title:            "RFAD Launcher",
 		Width:            1240,
 		Height:           768,
 		Frameless:        true,
 		BackgroundColour: &options.RGBA{R: 0, G: 0, B: 0, A: 0},
-		// highlight-end
 		Linux: &linux.Options{
 			WindowIsTranslucent: true,
 			Icon:                appIcon,

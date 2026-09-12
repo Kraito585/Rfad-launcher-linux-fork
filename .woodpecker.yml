@@ -3,17 +3,17 @@ steps:
     image: ubuntu:22.04
     environment:
       DEBIAN_FRONTEND: noninteractive
-      # Этот флаг критически важен для Docker: он заставляет linuxdeploy 
-      # распаковывать себя в /tmp вместо попыток примонтировать образ через FUSE
+      # Этот флаг критически важен для Docker
       APPIMAGE_EXTRACT_AND_RUN: "1"
       OUTPUT: RFAD-Launcher-x86_64.AppImage
-      secrets: [ GOOGLE_CREDENTIALS ]
+    # secrets должен быть здесь, на одном уровне с environment и commands
+    secrets: [ GOOGLE_CREDENTIALS ] 
     commands:
-      # 1. Установка базовых системных зависимостей (включая тот самый webkit2gtk-4.1)
+      # 1. Установка базовых системных зависимостей
       - apt-get update
       - apt-get install -y curl wget git build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev desktop-file-utils file libglib2.0-bin
 
-      # 2. Установка Node.js 20 (нужен для фронтенда Wails)
+      # 2. Установка Node.js 20
       - curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
       - apt-get install -y nodejs
 
@@ -33,10 +33,14 @@ steps:
       - wget https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
       - chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh
 
-      # 6. Создание файловой структуры AppDir (виртуального корня)
+      # 6. Создание файловой структуры AppDir
       - mkdir -p AppDir/usr/bin
       - mkdir -p AppDir/usr/share/applications
       - mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+      
+      # Копирование вспомогательных процессов WebKit2GTK внутрь AppDir (КРИТИЧНО ДЛЯ STEAM DECK)
+      - mkdir -p AppDir/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1
+      - cp -a /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/* AppDir/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/ || true
       
       # Копируем бинарник и иконки
       - cp build/bin/RFADLauncherLinux AppDir/usr/bin/
@@ -57,6 +61,12 @@ steps:
       # 7. Финальная сборка и упаковка AppImage
       - ./linuxdeploy-x86_64.AppImage --appdir AppDir -e AppDir/usr/bin/RFADLauncherLinux -d AppDir/usr/share/applications/rfad.desktop -i AppDir/rfad.png --plugin gtk --output appimage
 
+      # 8. Гарантированное создание CHANGELOG.md (чтобы описание релиза не ломалось)
+      - |
+        if [ ! -f "CHANGELOG.md" ]; then
+          echo "$CI_COMMIT_MESSAGE" > CHANGELOG.md
+        fi
+
   # Шаг загрузки в GitHub Releases
   publish-github:
     image: woodpeckerci/plugin-release
@@ -65,6 +75,7 @@ steps:
         from_secret: github_token
       files:
         - RFAD-Launcher-x86_64.AppImage
+        - build/bin/RFADLauncherLinux
       title: "RFAD Launcher ${CI_COMMIT_TAG}"
       note: CHANGELOG.md 
     when:
