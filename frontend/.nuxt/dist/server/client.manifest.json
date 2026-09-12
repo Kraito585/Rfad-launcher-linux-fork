@@ -1,18 +1,227 @@
 {
-  "@vite/client": {
-    "prefetch": true,
-    "isEntry": true,
-    "file": "@vite/client",
-    "css": [],
-    "module": true,
-    "resourceType": "script"
-  },
-  "/mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/nuxt/dist/app/entry.js": {
+  "_CEYdtR7I.js": {
     "resourceType": "script",
     "module": true,
     "prefetch": true,
     "preload": true,
+    "file": "CEYdtR7I.js",
+    "name": "nuxt-link",
+    "imports": [
+      "node_modules/nuxt/dist/app/entry.js"
+    ]
+  },
+  "assets/fonts/FuturaPT-Bold.woff2": {
+    "resourceType": "font",
+    "mimeType": "font/woff2",
+    "file": "FuturaPT-Bold.DKNg7yzx.woff2",
+    "src": "assets/fonts/FuturaPT-Bold.woff2"
+  },
+  "assets/fonts/FuturaPT-Book.woff2": {
+    "resourceType": "font",
+    "mimeType": "font/woff2",
+    "file": "FuturaPT-Book.AH8qB5hR.woff2",
+    "src": "assets/fonts/FuturaPT-Book.woff2"
+  },
+  "assets/fonts/FuturaPT-Demi.woff2": {
+    "resourceType": "font",
+    "mimeType": "font/woff2",
+    "file": "FuturaPT-Demi.CGhXGxLE.woff2",
+    "src": "assets/fonts/FuturaPT-Demi.woff2"
+  },
+  "assets/fonts/FuturaPT-Heavy.woff2": {
+    "resourceType": "font",
+    "mimeType": "font/woff2",
+    "file": "FuturaPT-Heavy.DPIXlEiE.woff2",
+    "src": "assets/fonts/FuturaPT-Heavy.woff2"
+  },
+  "assets/fonts/FuturaPT-Light.woff2": {
+    "resourceType": "font",
+    "mimeType": "font/woff2",
+    "file": "FuturaPT-Light.BfLY5UcA.woff2",
+    "src": "assets/fonts/FuturaPT-Light.woff2"
+  },
+  "assets/fonts/FuturaPT-Medium.woff2": {
+    "resourceType": "font",
+    "mimeType": "font/woff2",
+    "file": "FuturaPT-Medium.BhgTp5Fw.woff2",
+    "src": "assets/fonts/FuturaPT-Medium.woff2"
+  },
+  "assets/fonts/HubotSans-BlackItalic.woff2": {
+    "resourceType": "font",
+    "mimeType": "font/woff2",
+    "file": "HubotSans-BlackItalic.C8830oaS.woff2",
+    "src": "assets/fonts/HubotSans-BlackItalic.woff2"
+  },
+  "assets/image/Matrona.webp": {
+    "resourceType": "image",
+    "prefetch": true,
+    "mimeType": "image/webp",
+    "file": "Matrona.B_dM4iPr.webp",
+    "src": "assets/image/Matrona.webp"
+  },
+  "assets/image/bg.webp": {
+    "resourceType": "image",
+    "prefetch": true,
+    "mimeType": "image/webp",
+    "file": "bg.DDO9NYuT.webp",
+    "src": "assets/image/bg.webp"
+  },
+  "node_modules/nuxt/dist/app/components/error-404.vue": {
+    "resourceType": "script",
+    "module": true,
+    "prefetch": true,
+    "preload": true,
+    "file": "CE8TH9gJ.js",
+    "name": "error-404",
+    "src": "node_modules/nuxt/dist/app/components/error-404.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_CEYdtR7I.js",
+      "node_modules/nuxt/dist/app/entry.js"
+    ],
+    "css": [
+      "error-404.De0RSRVg.css"
+    ]
+  },
+  "error-404.De0RSRVg.css": {
+    "file": "error-404.De0RSRVg.css",
+    "resourceType": "style",
+    "prefetch": true,
+    "preload": true
+  },
+  "node_modules/nuxt/dist/app/components/error-500.vue": {
+    "resourceType": "script",
+    "module": true,
+    "prefetch": true,
+    "preload": true,
+    "file": "DKQdWlg5.js",
+    "name": "error-500",
+    "src": "node_modules/nuxt/dist/app/components/error-500.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "node_modules/nuxt/dist/app/entry.js"
+    ],
+    "css": [
+      "error-500.CXoQoEWB.css"
+    ]
+  },
+  "error-500.CXoQoEWB.css": {
+    "file": "error-500.CXoQoEWB.css",
+    "resourceType": "style",
+    "prefetch": true,
+    "preload": true
+  },
+  "node_modules/nuxt/dist/app/entry.js": {
+    "resourceType": "script",
+    "module": true,
+    "prefetch": true,
+    "preload": true,
+    "file": "M0ZebdgR.js",
+    "name": "entry",
+    "src": "node_modules/nuxt/dist/app/entry.js",
     "isEntry": true,
-    "file": "/mnt/disc2/Projects/Rfad-launcher-linux-fork/frontend/node_modules/nuxt/dist/app/entry.js"
+    "dynamicImports": [
+      "node_modules/nuxt/dist/app/components/error-404.vue",
+      "node_modules/nuxt/dist/app/components/error-500.vue"
+    ],
+    "css": [
+      "entry.DL1Uprpq.css"
+    ],
+    "assets": [
+      "FuturaPT-Light.BfLY5UcA.woff2",
+      "FuturaPT-Book.AH8qB5hR.woff2",
+      "FuturaPT-Medium.BhgTp5Fw.woff2",
+      "FuturaPT-Demi.CGhXGxLE.woff2",
+      "FuturaPT-Bold.DKNg7yzx.woff2",
+      "FuturaPT-Heavy.DPIXlEiE.woff2",
+      "HubotSans-BlackItalic.C8830oaS.woff2",
+      "bg.DDO9NYuT.webp"
+    ]
+  },
+  "entry.DL1Uprpq.css": {
+    "file": "entry.DL1Uprpq.css",
+    "resourceType": "style",
+    "prefetch": true,
+    "preload": true
+  },
+  "FuturaPT-Light.BfLY5UcA.woff2": {
+    "file": "FuturaPT-Light.BfLY5UcA.woff2",
+    "resourceType": "font",
+    "mimeType": "font/woff2"
+  },
+  "FuturaPT-Book.AH8qB5hR.woff2": {
+    "file": "FuturaPT-Book.AH8qB5hR.woff2",
+    "resourceType": "font",
+    "mimeType": "font/woff2"
+  },
+  "FuturaPT-Medium.BhgTp5Fw.woff2": {
+    "file": "FuturaPT-Medium.BhgTp5Fw.woff2",
+    "resourceType": "font",
+    "mimeType": "font/woff2"
+  },
+  "FuturaPT-Demi.CGhXGxLE.woff2": {
+    "file": "FuturaPT-Demi.CGhXGxLE.woff2",
+    "resourceType": "font",
+    "mimeType": "font/woff2"
+  },
+  "FuturaPT-Bold.DKNg7yzx.woff2": {
+    "file": "FuturaPT-Bold.DKNg7yzx.woff2",
+    "resourceType": "font",
+    "mimeType": "font/woff2"
+  },
+  "FuturaPT-Heavy.DPIXlEiE.woff2": {
+    "file": "FuturaPT-Heavy.DPIXlEiE.woff2",
+    "resourceType": "font",
+    "mimeType": "font/woff2"
+  },
+  "HubotSans-BlackItalic.C8830oaS.woff2": {
+    "file": "HubotSans-BlackItalic.C8830oaS.woff2",
+    "resourceType": "font",
+    "mimeType": "font/woff2"
+  },
+  "bg.DDO9NYuT.webp": {
+    "file": "bg.DDO9NYuT.webp",
+    "resourceType": "image",
+    "prefetch": true,
+    "mimeType": "image/webp"
+  },
+  "pages/index.vue": {
+    "resourceType": "script",
+    "module": true,
+    "prefetch": true,
+    "preload": true,
+    "file": "BxtZmLx0.js",
+    "name": "index",
+    "src": "pages/index.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "node_modules/nuxt/dist/app/entry.js",
+      "_CEYdtR7I.js"
+    ],
+    "css": [
+      "index.D7lyaPLf.css"
+    ],
+    "assets": [
+      "Matrona.B_dM4iPr.webp",
+      "FuturaPT-Light.BfLY5UcA.woff2",
+      "FuturaPT-Book.AH8qB5hR.woff2",
+      "FuturaPT-Medium.BhgTp5Fw.woff2",
+      "FuturaPT-Demi.CGhXGxLE.woff2",
+      "FuturaPT-Bold.DKNg7yzx.woff2",
+      "FuturaPT-Heavy.DPIXlEiE.woff2",
+      "HubotSans-BlackItalic.C8830oaS.woff2"
+    ]
+  },
+  "index.D7lyaPLf.css": {
+    "file": "index.D7lyaPLf.css",
+    "resourceType": "style",
+    "prefetch": true,
+    "preload": true
+  },
+  "Matrona.B_dM4iPr.webp": {
+    "file": "Matrona.B_dM4iPr.webp",
+    "resourceType": "image",
+    "prefetch": true,
+    "mimeType": "image/webp"
   }
 }

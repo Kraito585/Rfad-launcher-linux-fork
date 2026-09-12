@@ -4,12 +4,8 @@ import (
 	"embed"
 	"log"
 	"os"
-	"path/filepath"
 
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/linux"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 //go:embed all:frontend/dist
@@ -24,36 +20,40 @@ func init() {
 }
 
 func main() {
-	appDir := os.Getenv("APPDIR")
-	if appDir != "" {
-		webkitPath := filepath.Join(appDir, "usr", "lib", "x86_64-linux-gnu", "webkit2gtk-4.1")
-		os.Setenv("WEBKIT_EXEC_PATH", webkitPath)
-		os.Setenv("WEBKIT_INJECTED_BUNDLE_PATH", webkitPath)
-	}
-	// --------------------------------
+	// Создаем экземпляр вашей структуры (из app.go)
+	appInstance := NewApp()
 
-	app := NewApp()
+	// 1. Инициализируем само приложение Wails
+	app := application.New(application.Options{
+		Name:        "RFAD Launcher",
+		Description: "Launcher for RFAD",
+		Icon:        appIcon,
+		Assets: application.AssetOptions{
+			Handler: application.AssetFileServerFS(assets),
+		},
+		Services: []application.Service{
+			application.NewService(appInstance),
+		},
+	})
 
-	err := wails.Run(&options.App{
+	app.On(application.EventAppReady, func() {
+		appInstance.startup()
+	})
+	app.On(application.EventAppShutdown, func() {
+		appInstance.shutdown()
+	})
+
+	window := app.NewWebviewWindowWithOptions(application.WebviewWindowOptions{
 		Title:            "RFAD Launcher",
 		Width:            1240,
 		Height:           768,
 		Frameless:        true,
-		BackgroundColour: &options.RGBA{R: 0, G: 0, B: 0, A: 0},
-		Linux: &linux.Options{
-			WindowIsTranslucent: true,
-			Icon:                appIcon,
-		},
-		AssetServer: &assetserver.Options{
-			Assets: assets,
-		},
-		OnStartup:  app.startup,
-		OnShutdown: app.shutdown,
-		Bind: []interface{}{
-			app,
-		},
+		BackgroundColour: application.NewRGBA(0, 0, 0, 0),
 	})
 
+	window.Show()
+
+	err := app.Run()
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -3,8 +3,8 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -44,33 +44,34 @@ type GameSettings struct {
 }
 
 type App struct {
-	ctx context.Context
 }
 
 func NewApp() *App {
 	return &App{}
 }
 
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
+func (a *App) startup() {
 	slog.Info("App started")
 }
 
-func (a *App) shutdown(ctx context.Context) {
+func (a *App) shutdown() {
 	slog.Info("App shutting down")
 }
 
-// ============================================================
-//  МЕТОДЫ, ВЫЗЫВАЕМЫЕ ИЗ ФРОНТЕНДА (заглушки)
-// ============================================================
-
 func (a *App) IsPathExist() bool {
-	status, err := core.IsPathExist(a.ctx, GetGameRoot())
-	if err != nil {
-		panic("uncown error")
+	filePath := filepath.Join(GetGameRoot(), "MO2", "ModOrganizer.exe")
+
+	_, err := os.Stat(filePath)
+	if err == nil {
+		return true
 	}
-	return status
+	if errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+
+	panic("unknown error")
 }
+
 func (a *App) GetLocalVersion() string {
 	slog.Info("GetLocalVersion called")
 
@@ -88,10 +89,8 @@ func (a *App) GetLocalVersion() string {
 		return "0.0"
 	}
 
-	// ВАЖНО: Удаляем невидимый символ BOM, если он есть (часто оставляет блокнот Windows)
 	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 
-	// Теперь очищаем строку от переносов (\n, \r) и пробелов
 	version := strings.TrimSpace(string(data))
 
 	if version == "" {
@@ -398,21 +397,17 @@ func (a *App) StartNewLauncher() error {
 }
 
 func (a *App) SelectFile() (string, error) {
-	options := wailsRuntime.OpenDialogOptions{
-		Title: "Выберите установщик игры (.exe или .msi)",
-		Filters: []wailsRuntime.FileFilter{
-			{DisplayName: "Исполняемые файлы", Pattern: "*.exe;*.msi"},
-			{DisplayName: "Все файлы", Pattern: "*.*"},
-		},
-	}
-	return wailsRuntime.OpenFileDialog(a.ctx, options)
+	return application.OpenFileDialog().
+		SetTitle("Выберите установщик игры (.exe или .msi)").
+		AddFilter("Исполняемые файлы", "*.exe;*.msi").
+		AddFilter("Все файлы", "*.*").
+		PromptForSingleSelection()
 }
 
 func (a *App) SelectDirectory() (string, error) {
-	options := wailsRuntime.OpenDialogOptions{
-		Title: "Выберите папку для установки игры",
-	}
-	return wailsRuntime.OpenDirectoryDialog(a.ctx, options)
+	return application.OpenDialog().
+		SetTitle("Выберите папку для установки игры").
+		PromptForDirectory()
 }
 
 func (a *App) ReadFile(path string) (string, error) {

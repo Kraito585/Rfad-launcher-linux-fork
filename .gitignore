@@ -6,3 +6,6 @@ frontend/.nuxt
 frontend/.output
 gdrive
 run.test.sh
+*.log
+AppDir
+RFAD_Launcher-x86_64.AppImage

@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -376,18 +375,6 @@ func FirstDownload(ctx context.Context, gameRoot string, creds []byte, offlineCo
 	downloader.RewriteStatus(filepath.Join(gameRoot, "download"), "config", configPath)
 
 	return nil
-}
-
-func IsPathExist(ctx context.Context, gameRoot string) (bool, error) {
-	filePath := filepath.Join(gameRoot, "MO2", "ModOrganizer.exe")
-	_, err := os.Stat(filePath)
-	if err == nil {
-		return true, nil
-	}
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	return false, err
 }
 
 func CheckDownloadStatus(destDir, keyword string) (bool, error) {
