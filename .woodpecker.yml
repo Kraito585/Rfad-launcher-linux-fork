@@ -59,7 +59,7 @@ steps:
 
   # Шаг загрузки в GitHub Releases
   publish-github:
-    image: woodpeckerci/plugin-github-release
+    image: woodpeckerci/plugin-release
     settings:
       api_key:
         from_secret: github_token
@@ -67,9 +67,5 @@ steps:
         - RFAD-Launcher-x86_64.AppImage
       title: "RFAD Launcher ${CI_COMMIT_TAG}"
       note: release_note.md
-      # Волшебная функция! Если в теге есть слово "beta", "alpha" или "rc", 
-      # плагин пометит релиз как Pre-release. 
-      # GitHub НЕ отдаст ему плашку Latest, и обычные юзеры его не скачают.
-      prerelease: "{{ contains CI_COMMIT_TAG \"beta\" \"alpha\" \"rc\" }}"
     when:
       - event: tag
