@@ -38,20 +38,34 @@ steps:
         fi
 
   # === 2. ЭТАП ТЕСТИРОВАНИЯ ЗАВИСИМОСТЕЙ ===
-
-  test-arch:
-    image: archlinux:latest
+  test-cachyos:
+    image: cachyos/cachyos:latest
     commands:
-      - pacman -Syu --noconfirm binutils
-      - chmod +x bin/rfadlauncherlinux-x86_64.AppImage
-      - cd bin && ./rfadlauncherlinux-x86_64.AppImage --appimage-extract
+      # Устанавливаем графические либы, которые и так есть у десктопных пользователей
+      - pacman -Syu --noconfirm libx11 wayland harfbuzz fribidi mesa libdrm fontconfig
+      # Устанавливаем родной пакет ZST
+      - pacman -U --noconfirm bin/RFADLauncherLinux.pkg.tar.zst
       - |
-        if ldd squashfs-root/usr/bin/RFADLauncherLinux | grep -q "not found"; then
-          echo "КРИТИЧЕСКАЯ ОШИБКА: В Arch Linux не хватает библиотек для AppImage!";
-          ldd squashfs-root/usr/bin/RFADLauncherLinux | grep "not found";
+        if ldd /usr/bin/RFADLauncherLinux | grep -q "not found"; then
+          echo "КРИТИЧЕСКАЯ ОШИБКА: Отсутствуют зависимости!";
+          ldd /usr/bin/RFADLauncherLinux | grep "not found";
           exit 1;
         else
-          echo "AppImage успешно прошел проверку на Arch Linux (CachyOS ready)!";
+          echo "Все зависимости CachyOS успешно разрешены!";
+        fi
+
+  test-garuda:
+    image: archlinux:latest # Официального образа Garuda нет, используем Arch как базу
+    commands:
+      - pacman -Syu --noconfirm libx11 wayland harfbuzz fribidi mesa libdrm fontconfig
+      - pacman -U --noconfirm bin/RFADLauncherLinux.pkg.tar.zst
+      - |
+        if ldd /usr/bin/RFADLauncherLinux | grep -q "not found"; then
+          echo "КРИТИЧЕСКАЯ ОШИБКА: Отсутствуют зависимости!";
+          ldd /usr/bin/RFADLauncherLinux | grep "not found";
+          exit 1;
+        else
+          echo "Все зависимости Garuda/Arch успешно разрешены!";
         fi
 
   test-debian:
