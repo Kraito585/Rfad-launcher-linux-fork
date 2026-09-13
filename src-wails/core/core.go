@@ -157,7 +157,7 @@ func StartMO2(gameRoot string, scriptContent, mo2Args string, isGameLaunch bool)
 	return nil
 }
 
-func FirstInstall(gameRoot string, creds []byte, libs []byte, progressCb func(float64, string)) error {
+func FirstInstall(gameRoot string, libs []byte, progressCb func(float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	statusFile := filepath.Join(destDir, "install_status.txt")
 
@@ -246,20 +246,20 @@ func FirstInstall(gameRoot string, creds []byte, libs []byte, progressCb func(fl
 	return nil
 }
 
-func FirstDownload(gameRoot string, creds []byte, offlineConfig []byte, progressCb func(float64, float64, string)) error {
+func FirstDownload(gameRoot string, offlineConfig []byte, progressCb func(float64, float64, string)) error {
 	slog.Info("FirstDownload: gameRoot = " + gameRoot)
 
 	var err error
 
-	if err := downloader.DownloadUpdate(gameRoot, creds, false, progressCb); err != nil {
+	if err := downloader.DownloadUpdate(gameRoot, false, progressCb); err != nil {
 		return err
 	}
 
-	if err := downloader.DownloadPrefix(gameRoot, creds, false, progressCb); err != nil {
+	if err := downloader.DownloadPrefix(gameRoot, false, progressCb); err != nil {
 		return err
 	}
 
-	if err := downloader.DownloadSteamfix(gameRoot, creds, false, progressCb); err != nil {
+	if err := downloader.DownloadSteamfix(gameRoot, false, progressCb); err != nil {
 		return err
 	}
 

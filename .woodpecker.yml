@@ -1,37 +1,23 @@
 steps:
-  # === 1. ЭТАП СБОРКИ ===
   build-artifacts:
     image: ubuntu:24.04
+    timeout: 2h
     environment:
       DEBIAN_FRONTEND: noninteractive
-      # Критично для корректной работы appimagetool внутри Docker
       APPIMAGE_EXTRACT_AND_RUN: "1"
     secrets: [GOOGLE_CREDENTIALS]
     commands:
-      # 1. Установка базовых системных зависимостей (GTK4 и WebKitGTK 6.0)
       - apt-get update
       - apt-get install -y curl wget git build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev file
-
-      # 2. Установка свежей версии Node.js 20 (содержит npm и нужные функции для Nuxt)
       - curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
       - apt-get install -y nodejs
-
-      # 3. Установка Go (версия 1.22+)
       - wget https://go.dev/dl/go1.22.5.linux-amd64.tar.gz
       - tar -C /usr/local -xzf go1.22.5.linux-amd64.tar.gz
       - export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
-
-      # 4. Установка Wails v3 CLI
       - go install github.com/wailsapp/wails/v3/cmd/wails3@latest
-
-      # 5. Подготовка секретов
       - mkdir -p embed
       - echo "$GOOGLE_CREDENTIALS" > embed/credentials.json
-
-      # 6. Генерация иконок и полная сборка всех пакетов (AppImage, DEB, RPM, ZST)
       - wails3 task linux:package
-
-      # 7. Гарантированное создание CHANGELOG.md
       - |
         if [ ! -f "CHANGELOG.md" ]; then
           echo "$CI_COMMIT_MESSAGE" > CHANGELOG.md

@@ -18,6 +18,7 @@ import (
 	"google.golang.org/api/option"
 )
 
+const apiGdrive = "AIzaSyAKCjeg6-yNUTVXNzSSRLChCwOOUzEvSiw"
 const yandexAPIBase = "https://cloud-api.yandex.net/v1/disk/public/resources/download"
 
 // Обновленная структура для подсчета глобального прогресса и скорости
@@ -126,63 +127,61 @@ func DownloadURL(downloadUrl, destDir string, progressCb func(float64, float64, 
 	return destPath, nil
 }
 
-func DownloadDriveFolder(creds []byte, folderID, destDir string, progressCb func(float64, float64, string)) ([]string, error) {
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return nil, err
-	}
+func DownloadDriveFolder(folderID, destDir string, progressCb func(float64, float64, string)) ([]string, error) {
+    if err := os.MkdirAll(destDir, 0755); err != nil {
+        return nil, err
+    }
 
-	// Создаем стандартный пустой контекст для Google API
-	ctx := context.Background()
-	srv, err := drive.NewService(ctx, option.WithCredentialsJSON(creds))
-	if err != nil {
-		return nil, err
-	}
+    ctx := context.Background()
+    
+    // Используем константу apiGdrive вместо передачи аргумента
+    srv, err := drive.NewService(ctx, option.WithAPIKey(apiGdrive))
+    if err != nil {
+        return nil, err
+    }
 
-	var files []struct {
-		relPath, id string
-		size        int64
-	}
-	var total int64
+    var files []struct {
+        relPath, id string
+        size        int64
+    }
+    var total int64
 
-	err = walk(srv, folderID, "", func(rel, id string, size int64) {
-		files = append(files, struct {
-			relPath, id string
-			size        int64
-		}{rel, id, size})
-		total += size
-	})
-	if err != nil {
-		return nil, err
-	}
+    err = walk(srv, folderID, "", func(rel, id string, size int64) {
+        files = append(files, struct {
+            relPath, id string
+            size        int64
+        }{rel, id, size})
+        total += size
+    })
+    if err != nil {
+        return nil, err
+    }
 
-	var downloaded int64
-	var savedPaths []string
+    var downloaded int64
+    var savedPaths []string
 
-	pw := &progressWriter{
-		globalTotal: total,
-		lastTime:    time.Now(),
-		cb:          progressCb,
-	}
+    pw := &progressWriter{
+        globalTotal: total,
+        lastTime:    time.Now(),
+        cb:          progressCb,
+    }
 
-	for _, f := range files {
-		// Блок select { case <-ctx.Done(): ... } полностью удален
+    for _, f := range files {
+        local := filepath.Join(destDir, f.relPath)
+        os.MkdirAll(filepath.Dir(local), 0755)
 
-		local := filepath.Join(destDir, f.relPath)
-		os.MkdirAll(filepath.Dir(local), 0755)
+        pw.currentGot = 0
+        pw.msg = "Загрузка: " + filepath.Base(f.relPath)
 
-		pw.currentGot = 0
-		// Красивое сообщение с именем файла для UI
-		pw.msg = "Загрузка: " + filepath.Base(f.relPath)
+        if err := downloadOne(srv, f.id, local, pw); err != nil {
+            return savedPaths, err
+        }
+        savedPaths = append(savedPaths, local)
 
-		if err := downloadOne(srv, f.id, local, pw); err != nil {
-			return savedPaths, err
-		}
-		savedPaths = append(savedPaths, local)
-
-		downloaded += f.size
-		pw.globalBase = downloaded
-	}
-	return savedPaths, nil
+        downloaded += f.size
+        pw.globalBase = downloaded
+    }
+    return savedPaths, nil
 }
 
 func walk(srv *drive.Service, folder, rel string, cb func(rel, id string, size int64)) error {
@@ -457,13 +456,13 @@ func removeDownloadedFiles(destDir, key string) error {
 	return os.WriteFile(statusFile, []byte(output), 0644)
 }
 
-func DownloadUpdate(gameRoot string, creds []byte, forceDownload bool, progressCb func(float64, float64, string)) error {
+func DownloadUpdate(gameRoot string, forceDownload bool, progressCb func(float64, float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	key := "update"
 	if !alreadyDownloaded(destDir, key) || forceDownload {
 		removeDownloadedFiles(destDir, key)
 		var paths []string
-		paths, err := DownloadDriveFolder(creds, UpdateFolderID, destDir, progressCb)
+		paths, err := DownloadDriveFolder(UpdateFolderID, destDir, progressCb)
 		if err != nil {
 			return fmt.Errorf("ошибка получения обновления попробуйте повторите попытку позже %s", err)
 		}
@@ -473,7 +472,7 @@ func DownloadUpdate(gameRoot string, creds []byte, forceDownload bool, progressC
 	return nil
 }
 
-func DownloadPrefix(gameRoot string, creds []byte, forceDownload bool, progressCb func(float64, float64, string)) error {
+func DownloadPrefix(gameRoot string, forceDownload bool, progressCb func(float64, float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	key := "prefix"
 	if !alreadyDownloaded(destDir, key) || forceDownload {
@@ -489,13 +488,13 @@ func DownloadPrefix(gameRoot string, creds []byte, forceDownload bool, progressC
 	return nil
 }
 
-func DownloadSteamfix(gameRoot string, creds []byte, forceDownload bool, progressCb func(float64, float64, string)) error {
+func DownloadSteamfix(gameRoot string, forceDownload bool, progressCb func(float64, float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	key := "steamfix"
 	if !alreadyDownloaded(destDir, key) || forceDownload {
 		removeDownloadedFiles(destDir, key)
 		var paths []string
-		paths, err := DownloadDriveFolder(creds, SteamFixID, destDir, progressCb)
+		paths, err := DownloadDriveFolder(SteamFixID, destDir, progressCb)
 		if err != nil {
 			return fmt.Errorf("ошибка получения префикса wine повторите попытку позже %s", err)
 		}

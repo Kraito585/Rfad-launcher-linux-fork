@@ -251,7 +251,6 @@ func (a *App) Update() error {
 	slog.Info("Начало процесса обновления игры")
 
 	gameRoot := GetGameRoot()
-	creds := getCreds()
 
 	// ==========================================
 	// 1. ЭТАП ЗАГРУЗКИ ОБНОВЛЕНИЯ
@@ -267,7 +266,7 @@ func (a *App) Update() error {
 		})
 	}
 
-	if err := rfad_update.DownloadUpdate(gameRoot, creds, downloadCb); err != nil {
+	if err := rfad_update.DownloadUpdate(gameRoot, downloadCb); err != nil {
 		slog.Error("Ошибка при скачивании обновления", "error", err)
 		return err
 	}
@@ -509,7 +508,6 @@ func (a *App) portOldConfig(gameRoot string) {
 func (a *App) FirstInstall() error { ///Патчи совместимости для Linux одноразовая установка
 	slog.Info("Начало полного процесса установки (Загрузка + Распаковка)")
 	gameRoot := GetGameRoot()
-	creds := getCreds()
 	offlineConfig := getOfflineConfig()
 
 	// 1. Сигнализируем фронтенду, что началась загрузка
@@ -524,7 +522,7 @@ func (a *App) FirstInstall() error { ///Патчи совместимости д
 		})
 	}
 
-	if err := core.FirstDownload(gameRoot, creds, offlineConfig, downloadCb); err != nil {
+	if err := core.FirstDownload(gameRoot, offlineConfig, downloadCb); err != nil {
 		slog.Error("Ошибка при скачивании", "error", err)
 		return err
 	}
@@ -541,7 +539,7 @@ func (a *App) FirstInstall() error { ///Патчи совместимости д
 		})
 	}
 
-	if err := core.FirstInstall(gameRoot, creds, getLibs(), unpackCb); err != nil {
+	if err := core.FirstInstall(gameRoot, getLibs(), unpackCb); err != nil {
 		slog.Error("Ошибка при распаковке", "error", err)
 		return err
 	}
@@ -929,7 +927,7 @@ func (a *App) RecoverComponent(key string, force bool) error {
 		}
 
 		// 2. Скачиваем Prefix (так как мы его тоже будем сносить)
-		err = downloader.DownloadPrefix(gameRoot, getCreds(), true, downloadCb)
+		err = downloader.DownloadPrefix(gameRoot, true, downloadCb)
 		if err != nil {
 			application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
 			return fmt.Errorf("ошибка загрузки префикса: %w", err)
@@ -990,7 +988,7 @@ func (a *App) RecoverComponent(key string, force bool) error {
 				})
 			}
 
-			err := downloader.DownloadPrefix(gameRoot, getCreds(), true, downloadCb)
+			err := downloader.DownloadPrefix(gameRoot, true, downloadCb)
 			if err != nil {
 				application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
 				return fmt.Errorf("ошибка загрузки префикса: %w", err)

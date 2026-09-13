@@ -2,13 +2,8 @@ package main
 
 import "embed"
 
-//go:embed embed/credentials.json embed/start.sh embed/innoextract embed/libs.zip embed/config.json build/appicon.png
+//go:embed embed/start.sh embed/innoextract embed/libs.zip embed/config.json build/appicon.png
 var bundledAssets embed.FS
-
-func getCreds() []byte {
-	creds, _ := bundledAssets.ReadFile("embed/credentials.json")
-	return creds
-}
 
 func getStartSh() []byte {
 	startSh, _ := bundledAssets.ReadFile("embed/start.sh")

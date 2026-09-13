@@ -97,8 +97,8 @@ func InstallUpdate(gameRoot string, unpackCb func(float64, string)) error {
 	return nil
 }
 
-func DownloadUpdate(gameRoot string, creds []byte, progressCb func(float64, float64, string)) error {
-	err := downloader.DownloadUpdate(gameRoot, creds, true, progressCb)
+func DownloadUpdate(gameRoot string, progressCb func(float64, float64, string)) error {
+	err := downloader.DownloadUpdate(gameRoot, true, progressCb)
 	if err != nil {
 		return fmt.Errorf("ошибка загрузки обновления: %w", err)
 	}
