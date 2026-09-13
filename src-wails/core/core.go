@@ -17,7 +17,6 @@ import (
 	config_patcher "rfad-launcher-linux/src-wails/patches/patch_configs"
 	"rfad-launcher-linux/src-wails/patches/prefix_install"
 	"rfad-launcher-linux/src-wails/patches/proton_install"
-	"rfad-launcher-linux/src-wails/patches/rfad_update"
 	unpacksteamfix "rfad-launcher-linux/src-wails/patches/unpack_steam_fix"
 	"rfad-launcher-linux/src-wails/utils"
 	"rfad-launcher-linux/src-wails/utils/steam_drm_switch"
@@ -214,13 +213,6 @@ func FirstInstall(gameRoot string, creds []byte, libs []byte, progressCb func(fl
 			return fmt.Errorf("Ошибка распаковки префикса: %w", err)
 		}
 		writeStatus("UnpackPrefix")
-	}
-
-	if !alreadyInstalled("InstallUpdate") {
-		if err := rfad_update.InstallUpdate(gameRoot, unpackCb); err != nil {
-			return fmt.Errorf("Ошибка обновления игры: %w", err)
-		}
-		writeStatus("InstallUpdate")
 	}
 
 	if !alreadyInstalled("ApplyConfigPatches") {

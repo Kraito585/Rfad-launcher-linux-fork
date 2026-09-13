@@ -16,7 +16,7 @@
   <Properties>
     <DisplayName>My Product</DisplayName>
     <PublisherDisplayName>My Company</PublisherDisplayName>
-    <Description>A rfad-launcher-v3 application</Description>
+    <Description>A RFADLauncherLinux application</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
   
@@ -29,10 +29,10 @@
   </Resources>
   
   <Applications>
-    <Application Id="com.example.rfadlauncherv3" Executable="rfad-launcher-v3" EntryPoint="Windows.FullTrustApplication">
+    <Application Id="com.example.rfadlauncherv3" Executable="RFADLauncherLinux" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
         DisplayName="My Product"
-        Description="A rfad-launcher-v3 application"
+        Description="A RFADLauncherLinux application"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png">
@@ -41,7 +41,7 @@
       </uap:VisualElements>
       
       <Extensions>
-        <desktop:Extension Category="windows.fullTrustProcess" Executable="rfad-launcher-v3" />
+        <desktop:Extension Category="windows.fullTrustProcess" Executable="RFADLauncherLinux" />
         
         
       </Extensions>

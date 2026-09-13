@@ -5,9 +5,9 @@
   "author": "amirust",
   "scripts": {
     "dev": "nuxt dev",
-    "build": "nuxt build",
+    "build": "nuxt generate",
     "generate": "nuxt generate",
-    "build:dev": "nuxt build",
+    "build:dev": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare"
   },

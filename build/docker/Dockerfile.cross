@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && pkg-config --exists webkit2gtk-4.1 \
     && rm -rf /var/lib/apt/lists/*
 
+ENV GODEBUG=netdns=cgo
 RUN go install mvdan.cc/garble@${GARBLE_VERSION}
 
 # Install Zig - automatically selects correct binary for host architecture.
@@ -219,6 +220,9 @@ ${COMPILER} -tags "$TAGS" -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o bin/$
 echo "Built: bin/${APP}-${GOOS}-${GOARCH}${EXT}"
 SCRIPT
 RUN chmod +x /usr/local/bin/build.sh
+
+RUN ln -s /usr/lib/x86_64-linux-gnu/gtk-4.0 /usr/lib/gtk-4.0 || true
+RUN cp -r /usr/lib/x86_64-linux-gnu/gtk-4.0 /usr/lib/gtk-4.0 || true
 
 WORKDIR /app
 ENTRYPOINT ["/usr/local/bin/build.sh"]

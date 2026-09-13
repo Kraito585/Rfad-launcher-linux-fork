@@ -8,7 +8,7 @@
         AllowPromptForPassword="false">
     </Settings>
     <Installer
-        Path="rfad-launcher-v3"
+        Path="RFADLauncherLinux"
         Arguments=""
         InstallLocation="C:\Program Files\My Company\My Product">
     </Installer>
@@ -18,7 +18,7 @@
         PublisherName="CN=My Company"
         PublisherDisplayName="My Company"
         Version="0.1.0.0"
-        PackageDescription="A rfad-launcher-v3 application">
+        PackageDescription="A RFADLauncherLinux application">
         <Capabilities>
             <Capability Name="runFullTrust" />
             
@@ -26,9 +26,9 @@
         <Applications>
             <Application
                 Id="com.example.rfadlauncherv3"
-                Description="A rfad-launcher-v3 application"
+                Description="A RFADLauncherLinux application"
                 DisplayName="My Product"
-                ExecutableName="rfad-launcher-v3"
+                ExecutableName="RFADLauncherLinux"
                 EntryPoint="Windows.FullTrustApplication">
                 
             </Application>
@@ -43,11 +43,11 @@
             <Framework>false</Framework>
             <DisplayName>My Product</DisplayName>
             <PublisherDisplayName>My Company</PublisherDisplayName>
-            <Description>A rfad-launcher-v3 application</Description>
+            <Description>A RFADLauncherLinux application</Description>
             <Logo>Assets\AppIcon.png</Logo>
         </Properties>
     </PackageInformation>
-    <SaveLocation PackagePath="rfad-launcher-v3.msix" />
+    <SaveLocation PackagePath="RFADLauncherLinux.msix" />
     <PackageIntegrity>
         <CertificatePath></CertificatePath>
     </PackageIntegrity>

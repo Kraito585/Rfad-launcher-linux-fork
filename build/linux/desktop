@@ -1,13 +1,13 @@
 [Desktop Entry]
 Version=1.0
 Name=My Product
-Comment=A rfad-launcher-v3 application
+Comment=A RFADLauncherLinux application
 # The Exec line includes %u to pass the URL to the application
-Exec=/usr/local/bin/rfad-launcher-v3 %u
+Exec=/usr/local/bin/RFADLauncherLinux %u
 Terminal=false
 Type=Application
-Icon=rfad-launcher-v3
+Icon=RFADLauncherLinux
 Categories=Utility;
-StartupWMClass=rfad-launcher-v3
+StartupWMClass=RFADLauncherLinux
 
  

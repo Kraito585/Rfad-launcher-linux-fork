@@ -596,7 +596,7 @@ func (a *App) IntegrateAppImageAndRelaunch() error {
 
 	targetExe := filepath.Join(targetDir, "RFADLauncher.AppImage")
 
-	// Если AppImage уже запущен из правильного места, пропускаем
+	// Если AppImage уже запущен из правильного места, пропускаем перемещение, но можем обновить ярлык
 	if appImagePath == targetExe {
 		slog.Info("AppImage уже находится в Applications, пропускаем копирование")
 		return nil
@@ -604,29 +604,42 @@ func (a *App) IntegrateAppImageAndRelaunch() error {
 
 	_ = os.Remove(targetExe)
 
-	// Копируем AppImage используя нашу надежную функцию (которая попытается сделать Hardlink)
+	// Копируем AppImage
 	slog.Info("Интеграция AppImage", "source", appImagePath, "target", targetExe)
 	if err := utils.CopyFile(appImagePath, targetExe); err != nil {
 		return fmt.Errorf("не удалось скопировать AppImage: %w", err)
 	}
 
-	// Создаем ярлык в меню приложений пользователя
+	// === Сохраняем иконку ===
+	iconPath := "utilities-terminal" // Фолбэк на стандартную иконку терминала
+	iconDir := filepath.Join(homeDir, ".local", "share", "icons")
+	
+	if err := os.MkdirAll(iconDir, 0755); err == nil {
+		targetIcon := filepath.Join(iconDir, "rfad-launcher.png")
+		// Вызываем getIcon() из пакета main
+		iconData := getIcon()
+		if writeErr := os.WriteFile(targetIcon, iconData, 0644); writeErr != nil {
+			slog.Warn("Не удалось сохранить иконку на диск", "error", writeErr)
+		} else {
+			// Если успешно записали, указываем путь к нашей иконке
+			iconPath = targetIcon
+		}
+	}
+
+	// === Создаем ярлык в меню приложений пользователя ===
 	desktopDir := filepath.Join(homeDir, ".local", "share", "applications")
 	if err := os.MkdirAll(desktopDir, 0755); err == nil {
 		desktopFile := filepath.Join(desktopDir, "rfad-launcher.desktop")
 
-		// Базовый .desktop файл.
-		// При желании можно добавить путь к иконке (Icon=/путь/к/иконке.png),
-		// если она лежит рядом или извлекается
 		desktopContent := fmt.Sprintf(`[Desktop Entry]
-Name=RFAD SE Launcher
-Comment=Управление и запуск сборки RFAD
-Exec="%s"
-Icon=utilities-terminal
-Terminal=false
-Type=Application
-Categories=Game;
-`, targetExe)
+			Name=RFAD SE Launcher
+			Comment=Управление и запуск сборки RFAD
+			Exec="%s"
+			Icon=%s
+			Terminal=false
+			Type=Application
+			Categories=Game;
+		`, targetExe, iconPath)
 
 		if writeErr := os.WriteFile(desktopFile, []byte(desktopContent), 0644); writeErr != nil {
 			slog.Warn("Не удалось создать ярлык .desktop", "error", writeErr)

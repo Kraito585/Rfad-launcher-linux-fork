@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>rfad-launcher-v3</string>
+    <string>RFADLauncherLinux</string>
     <key>CFBundleIdentifier</key>
     <string>com.example.rfadlauncherv3</string>
     <key>CFBundleName</key>

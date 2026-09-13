@@ -2,7 +2,7 @@ package main
 
 import "embed"
 
-//go:embed embed/credentials.json embed/start.sh embed/innoextract embed/libs.zip embed/config.json
+//go:embed embed/credentials.json embed/start.sh embed/innoextract embed/libs.zip embed/config.json build/appicon.png
 var bundledAssets embed.FS
 
 func getCreds() []byte {
@@ -28,4 +28,9 @@ func getLibs() []byte {
 func getOfflineConfig() []byte {
 	offlineConfig, _ := bundledAssets.ReadFile("embed/config.json")
 	return offlineConfig
+}
+
+func getIcon() []byte {
+	icon, _ := bundledAssets.ReadFile("build/appicon.png")
+	return icon
 }
