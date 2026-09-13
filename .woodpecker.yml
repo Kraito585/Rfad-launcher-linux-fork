@@ -10,7 +10,7 @@ steps:
     commands:
       # 1. Установка базовых системных зависимостей (GTK4 и WebKitGTK 6.0)
       - apt-get update
-      - apt-get install -y curl wget git build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
+      - apt-get install -y curl wget git build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev file
 
       # 2. Установка свежей версии Node.js 20 (содержит npm и нужные функции для Nuxt)
       - curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
