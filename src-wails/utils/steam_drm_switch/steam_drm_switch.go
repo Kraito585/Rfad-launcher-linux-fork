@@ -1,7 +1,6 @@
 package steam_drm_switch
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -9,7 +8,7 @@ import (
 	"rfad-launcher-linux/src-wails/utils"
 )
 
-func ToggleSteamDRM(ctx context.Context, gameRoot string, enable bool, unpackCb func(float64, string)) error {
+func ToggleSteamDRM(gameRoot string, enable bool, unpackCb func(float64, string)) error {
 	drmOnFiles := []string{"SkyrimSE.exe", "steam_api64.dll"}
 	drmOffFiles := []string{"SkyrimSE.exe", "steam_api64.dll", "steam_api64"}
 
@@ -45,12 +44,7 @@ func ToggleSteamDRM(ctx context.Context, gameRoot string, enable bool, unpackCb 
 	totalOperations := len(filesToCopy)
 
 	for i, f := range filesToCopy {
-		// Проверка отмены контекста
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
+		// Блок проверки ctx.Done() полностью удален
 
 		src := filepath.Join(sourceDir, f)
 		dst := filepath.Join(gameRoot, f)
@@ -88,5 +82,5 @@ func ToggleSteamDRM(ctx context.Context, gameRoot string, enable bool, unpackCb 
 		valStr = "true"
 	}
 
-	return utils.SetOneSetting(gameRoot, "SteamFix:", valStr)
+	return utils.SetOneSetting("SteamFix:", valStr)
 }

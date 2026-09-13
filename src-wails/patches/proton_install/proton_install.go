@@ -1,7 +1,6 @@
 package proton_install
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,7 +9,7 @@ import (
 	"strings"
 )
 
-func InstallGEProton(ctx context.Context, gameRoot string, unpackCb func(float64, string)) error {
+func InstallGEProton(gameRoot string, unpackCb func(float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	protonPath, err := utils.GetDownloadedPath(destDir, "GE-Proton")
 	if err != nil {
@@ -28,7 +27,7 @@ func InstallGEProton(ctx context.Context, gameRoot string, unpackCb func(float64
 	defer os.RemoveAll(tempDir)
 
 	// Передаем коллбэк в распаковщик архива
-	if err := utils.ExtractArchive(ctx, protonPath, tempDir, func(p float64, msg string) {
+	if err := utils.ExtractArchive(protonPath, tempDir, func(p float64, msg string) {
 		if unpackCb != nil {
 			// Добавляем префикс "Proton:", чтобы пользователю было понятно, что именно распаковывается
 			unpackCb(p, fmt.Sprintf("Proton: %s", msg))

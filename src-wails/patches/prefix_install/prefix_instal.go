@@ -1,7 +1,6 @@
 package prefix_install
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,7 +9,7 @@ import (
 	"rfad-launcher-linux/src-wails/utils/recovery"
 )
 
-func UnpackPrefix(ctx context.Context, gameRoot string, unpackCb func(float64, string)) error {
+func UnpackPrefix(gameRoot string, unpackCb func(float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 
 	// ==========================================
@@ -26,7 +25,7 @@ func UnpackPrefix(ctx context.Context, gameRoot string, unpackCb func(float64, s
 	os.MkdirAll(tempDir, 0755)
 	defer os.RemoveAll(tempDir)
 
-	if err := utils.ExtractArchive(ctx, archivePath, tempDir, func(p float64, msg string) {
+	if err := utils.ExtractArchive(archivePath, tempDir, func(p float64, msg string) {
 		if unpackCb != nil {
 			unpackCb(p*0.8, fmt.Sprintf("Префикс: %s", msg))
 		} // Выделяем 80% на префикс
@@ -73,7 +72,7 @@ func UnpackPrefix(ctx context.Context, gameRoot string, unpackCb func(float64, s
 		os.RemoveAll(libsTargetDir)
 		os.MkdirAll(libsTargetDir, 0755)
 
-		if err := utils.ExtractArchive(ctx, libsArchivePath, libsTargetDir, nil); err != nil {
+		if err := utils.ExtractArchive(libsArchivePath, libsTargetDir, nil); err != nil {
 			slog.Warn("Ошибка распаковки библиотек окружения", "err", err)
 		}
 	} else {
@@ -87,7 +86,7 @@ func UnpackPrefix(ctx context.Context, gameRoot string, unpackCb func(float64, s
 		unpackCb(0.95, "Интеграция библиотек в систему...")
 	}
 
-	if err := recovery.RecoverPrefix(ctx, gameRoot); err != nil {
+	if err := recovery.RecoverPrefix(gameRoot); err != nil {
 		return fmt.Errorf("ошибка при лечении префикса (wineboot): %w", err)
 	}
 

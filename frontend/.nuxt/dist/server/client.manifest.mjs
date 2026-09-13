@@ -1,10 +1,10 @@
 export default {
-  "_CEYdtR7I.js": {
+  "_D1MO5X9R.js": {
     "resourceType": "script",
     "module": true,
     "prefetch": true,
     "preload": true,
-    "file": "CEYdtR7I.js",
+    "file": "D1MO5X9R.js",
     "name": "nuxt-link",
     "imports": [
       "node_modules/nuxt/dist/app/entry.js"
@@ -71,12 +71,12 @@ export default {
     "module": true,
     "prefetch": true,
     "preload": true,
-    "file": "CE8TH9gJ.js",
+    "file": "DE3roFfu.js",
     "name": "error-404",
     "src": "node_modules/nuxt/dist/app/components/error-404.vue",
     "isDynamicEntry": true,
     "imports": [
-      "_CEYdtR7I.js",
+      "_D1MO5X9R.js",
       "node_modules/nuxt/dist/app/entry.js"
     ],
     "css": [
@@ -94,7 +94,7 @@ export default {
     "module": true,
     "prefetch": true,
     "preload": true,
-    "file": "DKQdWlg5.js",
+    "file": "BjThGySo.js",
     "name": "error-500",
     "src": "node_modules/nuxt/dist/app/components/error-500.vue",
     "isDynamicEntry": true,
@@ -116,7 +116,7 @@ export default {
     "module": true,
     "prefetch": true,
     "preload": true,
-    "file": "M0ZebdgR.js",
+    "file": "pvkuk_nQ.js",
     "name": "entry",
     "src": "node_modules/nuxt/dist/app/entry.js",
     "isEntry": true,
@@ -125,7 +125,7 @@ export default {
       "node_modules/nuxt/dist/app/components/error-500.vue"
     ],
     "css": [
-      "entry.DL1Uprpq.css"
+      "entry.VfmjJaKK.css"
     ],
     "assets": [
       "FuturaPT-Light.BfLY5UcA.woff2",
@@ -138,8 +138,8 @@ export default {
       "bg.DDO9NYuT.webp"
     ]
   },
-  "entry.DL1Uprpq.css": {
-    "file": "entry.DL1Uprpq.css",
+  "entry.VfmjJaKK.css": {
+    "file": "entry.VfmjJaKK.css",
     "resourceType": "style",
     "prefetch": true,
     "preload": true
@@ -190,16 +190,16 @@ export default {
     "module": true,
     "prefetch": true,
     "preload": true,
-    "file": "BxtZmLx0.js",
+    "file": "D05OKb80.js",
     "name": "index",
     "src": "pages/index.vue",
     "isDynamicEntry": true,
     "imports": [
       "node_modules/nuxt/dist/app/entry.js",
-      "_CEYdtR7I.js"
+      "_D1MO5X9R.js"
     ],
     "css": [
-      "index.D7lyaPLf.css"
+      "index.C-qt0Mhp.css"
     ],
     "assets": [
       "Matrona.B_dM4iPr.webp",
@@ -212,8 +212,8 @@ export default {
       "HubotSans-BlackItalic.C8830oaS.woff2"
     ]
   },
-  "index.D7lyaPLf.css": {
-    "file": "index.D7lyaPLf.css",
+  "index.C-qt0Mhp.css": {
+    "file": "index.C-qt0Mhp.css",
     "resourceType": "style",
     "prefetch": true,
     "preload": true

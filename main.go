@@ -14,19 +14,24 @@ var assets embed.FS
 //go:embed build/appicon.png
 var appIcon []byte
 
+var version = "dev"
+
 func init() {
 	os.Setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
 	os.Setenv("GDK_BACKEND", "x11")
 }
 
 func main() {
-	// Создаем экземпляр вашей структуры (из app.go)
+	// Создаем инстанс бэкенда
 	appInstance := NewApp()
 
-	// 1. Инициализируем само приложение Wails
+	// Автоинтеграция AppImage (если запущено из Загрузок — перенесет себя в ~/Applications и перезапустится)
+	appInstance.AutoIntegrateAppImage()
+
+	// Инициализируем приложение Wails v3
 	app := application.New(application.Options{
 		Name:        "RFAD Launcher",
-		Description: "Launcher for RFAD",
+		Description: "Launcher for RFAD SE",
 		Icon:        appIcon,
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -34,16 +39,14 @@ func main() {
 		Services: []application.Service{
 			application.NewService(appInstance),
 		},
+		Mac: application.MacOptions{
+			ApplicationShouldTerminateAfterLastWindowClosed: true,
+		},
 	})
 
-	app.On(application.EventAppReady, func() {
-		appInstance.startup()
-	})
-	app.On(application.EventAppShutdown, func() {
-		appInstance.shutdown()
-	})
-
-	window := app.NewWebviewWindowWithOptions(application.WebviewWindowOptions{
+	// Создаем главное окно
+	app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:             "main",
 		Title:            "RFAD Launcher",
 		Width:            1240,
 		Height:           768,
@@ -51,8 +54,7 @@ func main() {
 		BackgroundColour: application.NewRGBA(0, 0, 0, 0),
 	})
 
-	window.Show()
-
+	// Запускаем приложение
 	err := app.Run()
 	if err != nil {
 		log.Fatal(err)

@@ -1,50 +1,34 @@
 package fsrswitch
 
 import (
-	"context"
 	"fmt"
 	config_patcher "rfad-launcher-linux/src-wails/patches/patch_configs"
 	"rfad-launcher-linux/src-wails/utils"
-	"strconv"
 	"strings"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-func getBaseResolution(ctx context.Context, gameRoot string) (float64, float64) {
-	wStr, _ := utils.GetOneSetting(gameRoot, "BaseWidth:")
-	hStr, _ := utils.GetOneSetting(gameRoot, "BaseHeight:")
-
-	w, errW := strconv.ParseFloat(strings.TrimSpace(wStr), 64)
-	h, errH := strconv.ParseFloat(strings.TrimSpace(hStr), 64)
-
-	if errW == nil && errH == nil && w > 0 && h > 0 {
-		return w, h
+func getBaseResolution() (int, int) {
+	primaryScreen := application.Get().Screen.GetPrimary()
+	if primaryScreen == nil {
+		// Фоллбэк на случай, если монитор не удалось определить
+		return 1920, 1080
 	}
 
-	width, height := 1920.0, 1080.0
-	screens, _ := runtime.ScreenGetAll(ctx)
-	if len(screens) > 0 {
-		// Берем первый (основной) монитор
-		width = float64(screens[0].Size.Width)
-		height = float64(screens[0].Size.Height)
-	}
-
-	utils.SetOneSetting(gameRoot, "BaseWidth:", width)
-	utils.SetOneSetting(gameRoot, "BaseHeight:", height)
-
-	return width, height
+	// Можно использовать PhysicalBounds.Width / Height или поле Size
+	return primaryScreen.PhysicalBounds.Width, primaryScreen.PhysicalBounds.Height
 }
 
-func SyncFSRSettings(ctx context.Context, gameRoot string, grafikMod string) error {
+func SyncFSRSettings(gameRoot string, grafikMod string) error {
 	grafikMod = strings.TrimSpace(grafikMod)
-	useFSRStr, _ := utils.GetOneSetting(gameRoot, "FSR:")
+	useFSRStr, _ := utils.GetOneSetting("FSR:")
 	useFSR := strings.TrimSpace(useFSRStr) == "true"
 
-	fsrLvl, _ := utils.GetOneSetting(gameRoot, "FsrLvl:")
+	fsrLvl, _ := utils.GetOneSetting("FsrLvl:")
 	fsrLvl = strings.TrimSpace(fsrLvl)
 
-	baseWidth, baseHeight := getBaseResolution(ctx, gameRoot)
+	baseWidth, baseHeight := getBaseResolution()
 	var patches []config_patcher.ConfigPatch
 
 	if grafikMod == "CommunityShader" {
@@ -130,23 +114,21 @@ func SyncFSRSettings(ctx context.Context, gameRoot string, grafikMod string) err
 			}
 		}
 
-		finalW := fmt.Sprintf("%d", int(baseWidth*multiplier))
-		finalH := fmt.Sprintf("%d", int(baseHeight*multiplier))
+		finalW := fmt.Sprintf("%d", int(float64(baseWidth)*multiplier))
+		finalH := fmt.Sprintf("%d", int(float64(baseHeight)*multiplier))
 		resString := fmt.Sprintf("Resolution = %sx%s", finalW, finalH)
 
-		// Снова, SkyrimPrefs.ini не трогаем в плане рамок — только разрешение!
 		patches = append(patches, config_patcher.ConfigPatch{
 			TargetFile: "MO2/profiles/RFAD_SE/SkyrimPrefs.ini",
 			ReplacePrefix: map[string]string{
 				"iSize W=":      fmt.Sprintf("iSize W=%s", finalW),
 				"iSize H=":      fmt.Sprintf("iSize H=%s", finalH),
-				"bFull Screen=": "bFull Screen=0", // Обязательно 0!
-				"bBorderless=":  "bBorderless=1",  // Обязательно 1!
+				"bFull Screen=": "bFull Screen=0",
+				"bBorderless=":  "bBorderless=1",
 			},
 		})
 
 		if isWineFullscreen {
-			// Эксклюзивный экран запрашиваем ТОЛЬКО через хук Tweaks
 			patches = append(patches, config_patcher.ConfigPatch{
 				TargetFile: "MO2/mods/SSE Display Tweaks/SKSE/Plugins/SSEDisplayTweaks.ini",
 				Replace: map[string]string{
@@ -189,9 +171,8 @@ func SyncFSRSettings(ctx context.Context, gameRoot string, grafikMod string) err
 	return nil
 }
 
-func ResetToNativeBorderless(ctx context.Context, gameRoot string) error {
-	// Берем базовое (нативное) разрешение экрана
-	baseWidth, baseHeight := getBaseResolution(ctx, gameRoot)
+func ResetToNativeBorderless(gameRoot string) error {
+	baseWidth, baseHeight := getBaseResolution()
 
 	finalW := fmt.Sprintf("%d", int(baseWidth))
 	finalH := fmt.Sprintf("%d", int(baseHeight))
@@ -223,108 +204,6 @@ func ResetToNativeBorderless(ctx context.Context, gameRoot string) error {
 	_, err := config_patcher.ApplyPatchesFromJSON(gameRoot, patches, nil)
 	if err != nil {
 		return fmt.Errorf("ошибка сброса в оконный режим: %w", err)
-	}
-
-	return nil
-}
-
-func ApplyFSR(ctx context.Context, gameRoot string, fsrEnabled bool) error {
-	if !fsrEnabled {
-		return ResetToNativeBorderless(ctx, gameRoot)
-	}
-
-	grafikMod, _ := utils.GetOneSetting(gameRoot, "GrafikMod:")
-	grafikMod = strings.TrimSpace(grafikMod)
-
-	fsrLvl, _ := utils.GetOneSetting(gameRoot, "FsrLvl:")
-	fsrLvl = strings.TrimSpace(fsrLvl)
-	if fsrLvl == "" {
-		fsrLvl = "95"
-	}
-
-	baseWidth, baseHeight := getBaseResolution(ctx, gameRoot)
-	var patches []config_patcher.ConfigPatch
-
-	if grafikMod == "CommunityShader" {
-		qualityMode := 0
-		switch fsrLvl {
-		case "95":
-			qualityMode = 0
-		case "75":
-			qualityMode = 1
-		case "50":
-			qualityMode = 2
-		case "25":
-			qualityMode = 3
-		}
-
-		patches = append(patches, config_patcher.ConfigPatch{
-			TargetFile: "MO2/overwrite/SKSE/Plugins/CommunityShaders/SettingsUser.json",
-			ReplacePrefix: map[string]string{
-				`"qualityMode":`: fmt.Sprintf(`  "qualityMode": %d,`, qualityMode),
-			},
-		})
-
-		finalW := fmt.Sprintf("%d", int(baseWidth))
-		finalH := fmt.Sprintf("%d", int(baseHeight))
-
-		patches = append(patches, config_patcher.ConfigPatch{
-			TargetFile: "MO2/profiles/RFAD_SE/SkyrimPrefs.ini",
-			ReplacePrefix: map[string]string{
-				"iSize W=": fmt.Sprintf("iSize W=%s", finalW),
-				"iSize H=": fmt.Sprintf("iSize H=%s", finalH),
-			},
-		})
-		resString := fmt.Sprintf("Resolution = %sx%s", finalW, finalH)
-		patches = append(patches, config_patcher.ConfigPatch{
-			TargetFile: "MO2/mods/SSE Display Tweaks/SKSE/Plugins/SSEDisplayTweaks.ini",
-			ReplacePrefix: map[string]string{
-				"Resolution =": resString,
-			},
-		})
-
-	} else {
-		multiplier := 0.95
-		switch fsrLvl {
-		case "95":
-			multiplier = 0.95
-		case "75":
-			multiplier = 0.75
-		case "50":
-			multiplier = 0.50
-		case "25":
-			multiplier = 0.25
-		}
-
-		finalW := fmt.Sprintf("%d", int(baseWidth*multiplier))
-		finalH := fmt.Sprintf("%d", int(baseHeight*multiplier))
-
-		patches = append(patches, config_patcher.ConfigPatch{
-			TargetFile: "MO2/profiles/RFAD_SE/SkyrimPrefs.ini",
-			ReplacePrefix: map[string]string{
-				"iSize W=": fmt.Sprintf("iSize W=%s", finalW),
-				"iSize H=": fmt.Sprintf("iSize H=%s", finalH),
-			},
-		})
-
-		resString := fmt.Sprintf("Resolution = %sx%s", finalW, finalH)
-		patches = append(patches, config_patcher.ConfigPatch{
-			TargetFile: "MO2/mods/SSE Display Tweaks/SKSE/Plugins/SSEDisplayTweaks.ini",
-			Replace: map[string]string{
-				"Fullscreen = false": "Fullscreen = true",
-				"Borderless = true":  "Borderless = false",
-			},
-			ReplacePrefix: map[string]string{
-				"Resolution =": resString,
-			},
-		})
-	}
-
-	if len(patches) > 0 {
-		_, err := config_patcher.ApplyPatchesFromJSON(gameRoot, patches, nil)
-		if err != nil {
-			return fmt.Errorf("ошибка применения FSR: %w", err)
-		}
 	}
 
 	return nil

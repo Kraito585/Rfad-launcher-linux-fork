@@ -1,7 +1,6 @@
 package rfad_update
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -12,7 +11,7 @@ import (
 )
 
 // ProcessUpdate перемещает архив, распаковывает его и заменяет EngineFixes.dll
-func InstallUpdate(ctx context.Context, gameRoot string, unpackCb func(float64, string)) error {
+func InstallUpdate(gameRoot string, unpackCb func(float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	statusFile := filepath.Join(destDir, "download_status.txt")
 
@@ -34,12 +33,9 @@ func InstallUpdate(ctx context.Context, gameRoot string, unpackCb func(float64, 
 
 	var updatePath string
 
-	// 2. Логика выбора файла в зависимости от источника
 	if len(updatePaths) == 1 {
-		// Если файл только один (например, с CDN), берем его без проверок имени
 		updatePath = updatePaths[0]
 	} else if len(updatePaths) > 1 {
-		// Если файлов несколько (Google Drive), ищем конкретный архив
 		for _, path := range updatePaths {
 			if strings.HasSuffix(path, ".zip") && strings.Contains(path, "RFAD_PATCH") {
 				updatePath = path
@@ -62,7 +58,7 @@ func InstallUpdate(ctx context.Context, gameRoot string, unpackCb func(float64, 
 	}
 
 	// Передаем коллбэк для отображения прогресса во Vue
-	if err := utils.ExtractArchive(ctx, updatePath, targetDir, func(p float64, msg string) {
+	if err := utils.ExtractArchive(updatePath, targetDir, func(p float64, msg string) {
 		if unpackCb != nil {
 			// Добавляем префикс "Обновление:"
 			unpackCb(p, fmt.Sprintf("Обновление: %s", msg))
@@ -94,7 +90,6 @@ func InstallUpdate(ctx context.Context, gameRoot string, unpackCb func(float64, 
 
 	slog.Info("Обновление успешно установлено", "target", targetDir)
 
-	// Финальное сообщение для закрытия прогресс-бара этого этапа
 	if unpackCb != nil {
 		unpackCb(1.0, "Обновление успешно установлено")
 	}
@@ -102,8 +97,8 @@ func InstallUpdate(ctx context.Context, gameRoot string, unpackCb func(float64, 
 	return nil
 }
 
-func DownloadUpdate(ctx context.Context, gameRoot string, creds []byte, progressCb func(float64, float64, string)) error {
-	err := downloader.DownloadUpdate(ctx, gameRoot, creds, true, progressCb)
+func DownloadUpdate(gameRoot string, creds []byte, progressCb func(float64, float64, string)) error {
+	err := downloader.DownloadUpdate(gameRoot, creds, true, progressCb)
 	if err != nil {
 		return fmt.Errorf("ошибка загрузки обновления: %w", err)
 	}

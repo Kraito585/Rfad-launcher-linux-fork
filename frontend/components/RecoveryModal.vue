@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+import { App } from '~/bindings/rfad-launcher-linux';
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -18,7 +19,7 @@ const handleAction = async (target: string, action: string) => {
     console.log(`Запрос к Go: RecoverComponent(key: '${target}', force: ${isForceReinstall})`);
     
     // Вызываем нашу новую универсальную функцию в бэкенде
-    await window.go.main.App.RecoverComponent(target, isForceReinstall);
+    await App.RecoverComponent(target, isForceReinstall);
     
     // Опционально: можно добавить уведомление об успешном завершении
     console.log(`Восстановление ${target} успешно завершено`);

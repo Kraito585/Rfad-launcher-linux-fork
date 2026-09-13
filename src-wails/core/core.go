@@ -26,89 +26,8 @@ import (
 	"strings"
 	"time"
 
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
-
-type LauncherConfig struct {
-	LinuxPatchComplete bool   `json:"linuxPatchComplete"`
-	MangoHud           bool   `json:"mangoHud"`
-	FSR                bool   `json:"fsr"`
-	ShaderCache        bool   `json:"shaderCache"`
-	HDR                bool   `json:"hdr"`
-	SteamFix           bool   `json:"steamFix"`
-	FpsLimit           string `json:"fpsLimit"`
-	CDN                bool   `json:"cdn"`
-	WineDllOverrides   string `json:"wineDllOverrides"`
-	GrafikMod          string `json:"grafikMod"`
-	FsrLvl             string `json:"fsrLvl"`
-}
-
-func parseBool(val string) bool {
-	return strings.ToLower(val) == "true"
-}
-
-func GetLauncherConfig(gameRoot string) (*LauncherConfig, error) {
-	configPath := filepath.Join(gameRoot, "launcher_config.txt")
-
-	file, err := os.Open(configPath)
-	if err != nil {
-		// Если файла нет, возвращаем пустой конфиг (со значениями по умолчанию)
-		return &LauncherConfig{}, err
-	}
-	defer file.Close()
-
-	cfg := &LauncherConfig{}
-	scanner := bufio.NewScanner(file)
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-
-		if line == "" {
-			continue
-		}
-
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) != 2 {
-			continue
-		}
-
-		key := strings.TrimSpace(parts[0])
-
-		val := strings.TrimSpace(parts[1])
-		val = strings.Trim(val, `"'`)
-
-		switch key {
-		case "linux-patch-complite":
-			cfg.LinuxPatchComplete = parseBool(val)
-		case "MangoHud":
-			cfg.MangoHud = parseBool(val)
-		case "FSR":
-			cfg.FSR = parseBool(val)
-		case "ShaderCache":
-			cfg.ShaderCache = parseBool(val)
-		case "HDR":
-			cfg.HDR = parseBool(val)
-		case "SteamFix":
-			cfg.SteamFix = parseBool(val)
-		case "FpsLimit":
-			cfg.FpsLimit = val
-		case "CDN":
-			cfg.CDN = parseBool(val)
-		case "WineDllOverrides":
-			cfg.WineDllOverrides = val
-		case "GrafikMod":
-			cfg.GrafikMod = val
-		case "FsrLvl":
-			cfg.FsrLvl = val
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return cfg, err
-	}
-
-	return cfg, nil
-}
 
 func useNvapi() bool {
 	if _, err := os.Stat("/proc/driver/nvidia"); err != nil {
@@ -147,35 +66,30 @@ func useNvapi() bool {
 	return hasNVAPI
 }
 
-func StartMO2(ctx context.Context, gameRoot string, scriptContent, mo2Args string, isGameLaunch bool) error {
+func StartMO2(gameRoot string, scriptContent, mo2Args string, isGameLaunch bool) error {
 	// 1. Считываем настройки лаунчера
-	cfg, err := GetLauncherConfig(gameRoot)
+	cfg, err := utils.GetLauncherConfig()
 	if err != nil {
 		core.LogInfo("Не удалось прочитать launcher_config.txt, используются настройки по умолчанию: %v", err)
 		if cfg == nil {
-			// На всякий случай задаем дефолтные dll overrides, если файла вообще нет
-			cfg = &LauncherConfig{
+			cfg = &utils.LauncherConfig{
 				WineDllOverrides: "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b",
 			}
 		}
 	}
 
-	// 2. Проверяем наличие NVAPI
 	hasNvapi := useNvapi()
 
-	useGamemode := true // Можно тоже вынести в конфиг позже при желании
+	useGamemode := true
 
-	// 3. Логика включения Gamescope
 	enableGamescope := false
 
 	// Включаем Gamescope ТОЛЬКО если это запуск ИГРЫ (явный флаг), включен Wine FSR и это НЕ CommunityShader
 	if isGameLaunch && cfg.FSR && cfg.GrafikMod != "CommunityShader" {
 		if _, err := exec.LookPath("gamescope"); err != nil {
-			// Если бинарник не найден, отправляем сигнал на фронтенд для показа уведомления
-			wailsRuntime.EventsEmit(ctx, "gamescope-missing")
-			enableGamescope = false // Запускаем без него
+			application.Get().Event.Emit("gamescope-missing")
+			enableGamescope = false
 		} else {
-			// Gamescope найден, даем добро на его использование
 			enableGamescope = true
 		}
 	}
@@ -235,16 +149,16 @@ func StartMO2(ctx context.Context, gameRoot string, scriptContent, mo2Args strin
 	go func() {
 		err := cmd.Run()
 		if err != nil {
-			wailsRuntime.EventsEmit(ctx, "game-error", err.Error())
+			application.Get().Event.Emit("game-error", err.Error())
 		} else {
-			wailsRuntime.EventsEmit(ctx, "game-exit", nil)
+			application.Get().Event.Emit("game-exit")
 		}
 	}()
 
 	return nil
 }
 
-func FirstInstall(ctx context.Context, gameRoot string, creds []byte, libs []byte, progressCb func(float64, string)) error {
+func FirstInstall(gameRoot string, creds []byte, libs []byte, progressCb func(float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	statusFile := filepath.Join(destDir, "install_status.txt")
 
@@ -289,28 +203,28 @@ func FirstInstall(ctx context.Context, gameRoot string, creds []byte, libs []byt
 	}
 
 	if !alreadyInstalled("InstallGEProton") {
-		if err := proton_install.InstallGEProton(ctx, gameRoot, unpackCb); err != nil {
+		if err := proton_install.InstallGEProton(gameRoot, unpackCb); err != nil {
 			return fmt.Errorf("Ошибка распаковки протона: %w", err)
 		}
 		writeStatus("InstallGEProton")
 	}
 
 	if !alreadyInstalled("UnpackPrefix") {
-		if err := prefix_install.UnpackPrefix(ctx, gameRoot, unpackCb); err != nil {
+		if err := prefix_install.UnpackPrefix(gameRoot, unpackCb); err != nil {
 			return fmt.Errorf("Ошибка распаковки префикса: %w", err)
 		}
 		writeStatus("UnpackPrefix")
 	}
 
 	if !alreadyInstalled("InstallUpdate") {
-		if err := rfad_update.InstallUpdate(ctx, gameRoot, unpackCb); err != nil {
+		if err := rfad_update.InstallUpdate(gameRoot, unpackCb); err != nil {
 			return fmt.Errorf("Ошибка обновления игры: %w", err)
 		}
 		writeStatus("InstallUpdate")
 	}
 
 	if !alreadyInstalled("ApplyConfigPatches") {
-		total, err := ApplyConfigPatches(ctx, gameRoot, unpackCb)
+		total, err := ApplyConfigPatches(gameRoot, unpackCb)
 		if err != nil {
 			return fmt.Errorf("Не удалось применить патчи конфигурации игры: %w", err)
 		}
@@ -319,7 +233,7 @@ func FirstInstall(ctx context.Context, gameRoot string, creds []byte, libs []byt
 	}
 
 	if !alreadyInstalled("RestoreDisabledSteamDrm") {
-		err := steam_drm_switch.ToggleSteamDRM(ctx, gameRoot, false, unpackCb)
+		err := steam_drm_switch.ToggleSteamDRM(gameRoot, false, unpackCb)
 		if err != nil {
 			return fmt.Errorf("Не удалось восстановить файлы запуска игры: %w", err)
 		}
@@ -328,40 +242,40 @@ func FirstInstall(ctx context.Context, gameRoot string, creds []byte, libs []byt
 	}
 
 	if !alreadyInstalled("InstallDrmSwitch") {
-		err := unpacksteamfix.UnpackSteamFix(ctx, gameRoot, unpackCb)
+		err := unpacksteamfix.UnpackSteamFix(gameRoot, unpackCb)
 		if err != nil {
 			return fmt.Errorf("Не удалось установить переключатель Steam DRM: %w", err)
 		}
 		writeStatus("InstallDrmSwitch")
 	}
 
-	utils.SetOneSetting(gameRoot, "linux-patch-complite:", true)
+	utils.SetOneSetting("linux-patch-complite:", true)
 
 	return nil
 }
 
-func FirstDownload(ctx context.Context, gameRoot string, creds []byte, offlineConfig []byte, progressCb func(float64, float64, string)) error {
+func FirstDownload(gameRoot string, creds []byte, offlineConfig []byte, progressCb func(float64, float64, string)) error {
 	slog.Info("FirstDownload: gameRoot = " + gameRoot)
 
 	var err error
 
-	if err := downloader.DownloadUpdate(ctx, gameRoot, creds, false, progressCb); err != nil {
+	if err := downloader.DownloadUpdate(gameRoot, creds, false, progressCb); err != nil {
 		return err
 	}
 
-	if err := downloader.DownloadPrefix(ctx, gameRoot, creds, false, progressCb); err != nil {
+	if err := downloader.DownloadPrefix(gameRoot, creds, false, progressCb); err != nil {
 		return err
 	}
 
-	if err := downloader.DownloadSteamfix(ctx, gameRoot, creds, false, progressCb); err != nil {
+	if err := downloader.DownloadSteamfix(gameRoot, creds, false, progressCb); err != nil {
 		return err
 	}
 
-	if err := downloader.DownloadCommunityShaders(ctx, gameRoot, false, progressCb); err != nil {
+	if err := downloader.DownloadCommunityShaders(gameRoot, false, progressCb); err != nil {
 		return err
 	}
 
-	if err := downloader.DownloadGEProton(ctx, gameRoot, false, progressCb); err != nil {
+	if err := downloader.DownloadGEProton(gameRoot, false, progressCb); err != nil {
 		return err
 	}
 
@@ -375,27 +289,6 @@ func FirstDownload(ctx context.Context, gameRoot string, creds []byte, offlineCo
 	downloader.RewriteStatus(filepath.Join(gameRoot, "download"), "config", configPath)
 
 	return nil
-}
-
-func CheckDownloadStatus(destDir, keyword string) (bool, error) {
-	statusFile := filepath.Join(destDir, "download_status.txt")
-	f, err := os.Open(statusFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.Contains(line, keyword) {
-			return true, nil
-		}
-	}
-	return false, scanner.Err()
 }
 
 func CheckInsatllStatus(destDir, keyword string) (bool, error) {
@@ -419,13 +312,13 @@ func CheckInsatllStatus(destDir, keyword string) (bool, error) {
 	return false, scanner.Err()
 }
 
-func ApplyConfigPatches(ctx context.Context, gameRoot string, progressCb func(float64, string)) (int, error) {
+func ApplyConfigPatches(gameRoot string, progressCb func(float64, string)) (int, error) {
 	destDir := filepath.Join(gameRoot, "download")
 	configPath, err := utils.GetDownloadedPath(destDir, "config")
 	if err != nil {
 		return 0, fmt.Errorf("не удалось найти путь к конфигу патчей: %w", err)
 	}
-	slog.Info("update path: %s", configPath)
+	slog.Info("update path", "path", configPath)
 	if configPath == "" {
 		return 0, fmt.Errorf("конфиг патчей не найден в статусе загрузки")
 	}
@@ -444,11 +337,12 @@ func ApplyConfigPatches(ctx context.Context, gameRoot string, progressCb func(fl
 	return config_patcher.ApplyPatchesFromJSON(gameRoot, patches, progressCb)
 }
 
-func InstallGame(ctx context.Context, installerPath, installPath string, cacheDir string, innoextractBytes []byte, progressCb func(float64, string)) error {
+func InstallGame(installerPath, installPath, oldMo2Path, cacheDir string, innoextractBytes []byte, progressCb func(float64, string)) error {
 	installerPath = strings.Trim(installerPath, "\"' ")
 	installPath = strings.Trim(installPath, "\"' ")
+	oldMo2Path = strings.TrimSpace(oldMo2Path) // Очищаем от лишних пробелов
 
-	slog.Info("InstallGame: paths", "installerPath", installerPath, "installPath", installPath)
+	slog.Info("InstallGame: paths", "installerPath", installerPath, "installPath", installPath, "oldMo2Path", oldMo2Path)
 
 	if installerPath == "" || installPath == "" {
 		return fmt.Errorf("путь к установщику или папке установки пустой")
@@ -466,7 +360,6 @@ func InstallGame(ctx context.Context, installerPath, installPath string, cacheDi
 	innoBinPath := ""
 	sysInno, err := exec.LookPath("innoextract")
 	if err == nil {
-		// Проверяем системный
 		testCmd := exec.Command(sysInno, "--version")
 		testOut, testErr := testCmd.CombinedOutput()
 		if testErr == nil && strings.Contains(string(testOut), "innoextract") {
@@ -488,7 +381,6 @@ func InstallGame(ctx context.Context, installerPath, installPath string, cacheDi
 			return fmt.Errorf("не удалось сохранить innoextract: %v", err)
 		}
 
-		// Проверяем права
 		if info, err := os.Stat(innoBinPath); err == nil {
 			if info.Mode()&0111 == 0 {
 				slog.Warn("innoextract not executable, setting permissions")
@@ -498,7 +390,6 @@ func InstallGame(ctx context.Context, installerPath, installPath string, cacheDi
 			}
 		}
 
-		// Проверяем, что это бинарник (ELF на Linux)
 		if runtime.GOOS == "linux" {
 			if data, err := os.ReadFile(innoBinPath); err == nil && len(data) > 4 {
 				if string(data[1:4]) == "ELF" {
@@ -509,7 +400,6 @@ func InstallGame(ctx context.Context, installerPath, installPath string, cacheDi
 			}
 		}
 
-		// Проверяем вшитый
 		fullCmd := fmt.Sprintf("%s --version", innoBinPath)
 		slog.Info("Testing embedded innoextract", "command", fullCmd)
 		testCmd := exec.Command(innoBinPath, "--version")
@@ -520,7 +410,6 @@ func InstallGame(ctx context.Context, installerPath, installPath string, cacheDi
 		slog.Info("Using embedded innoextract", "path", innoBinPath)
 	}
 
-	// Запускаем основную команду через bash -c, чтобы точно воспроизвести ручной запуск
 	cmdStr := fmt.Sprintf("%s -d %q %q", innoBinPath, installPath, installerPath)
 	slog.Info("Running innoextract", "full_command", cmdStr)
 	cmd := exec.Command("bash", "-c", cmdStr)
@@ -539,7 +428,6 @@ func InstallGame(ctx context.Context, installerPath, installPath string, cacheDi
 		done <- cmd.Wait()
 	}()
 
-	// Ожидаемый размер (заглушка)
 	expectedSize := int64(77737979510)
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -581,20 +469,99 @@ Loop:
 	_ = os.RemoveAll(appDir)
 	_ = os.RemoveAll(filepath.Join(installPath, "tmp"))
 
-	utils.SetOneSetting(installPath, "linux-patch-complite", "false")
-	utils.SetOneSetting(installPath, "MangoHud:", "false")
-	utils.SetOneSetting(installPath, "FSR:", "false")
-	utils.SetOneSetting(installPath, "ShaderCache:", "true")
-	utils.SetOneSetting(installPath, "HDR:", "false")
-	utils.SetOneSetting(installPath, "SteamFix:", "false")
-	utils.SetOneSetting(installPath, "FpsLimit:", " ")
-	utils.SetOneSetting(installPath, "CDN:", "false")
-	utils.SetOneSetting(installPath, "WineDllOverrides:", "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b")
-	utils.SetOneSetting(installPath, "GrafikMod:", "Нету")
-	utils.SetOneSetting(installPath, "FsrLvl:", "95")
+	// === ПОРТИРОВАНИЕ MO2 ===
+	if oldMo2Path != "" {
+		if progressCb != nil {
+			progressCb(0.0, "Подготовка к переносу MO2 (вычисление размера)...")
+		}
+		slog.Info("Начинаем портирование MO2", "oldMo2Path", oldMo2Path)
+		
+		// Передаем progressCb в функцию
+		if err := portMO2Directory(oldMo2Path, installPath, progressCb); err != nil {
+			slog.Error("Ошибка при портировании MO2", "error", err)
+			return fmt.Errorf("ошибка портирования MO2: %v", err)
+		}
+		slog.Info("Портирование MO2 успешно завершено")
+	}
+
+	// Сохраняем корневой путь игры в наш глобальный конфиг!
+	utils.SetOneSetting("gameDir", installPath)
+
+	// Сохраняем настройки по умолчанию (убраны лишние двоеточия)
+	utils.SetOneSetting("linux-patch-complite", "false")
+	utils.SetOneSetting("MangoHud", "false")
+	utils.SetOneSetting("FSR", "false")
+	utils.SetOneSetting("ShaderCache", "true")
+	utils.SetOneSetting("HDR", "false")
+	utils.SetOneSetting("SteamFix", "false")
+	utils.SetOneSetting("FpsLimit", "60")
+	utils.SetOneSetting("WineDllOverrides", "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b")
+	utils.SetOneSetting("GrafikMod", "Нету")
+	utils.SetOneSetting("FsrLvl", "95")
 
 	if progressCb != nil {
 		progressCb(1.0, "Установка завершена!")
+	}
+
+	return nil
+}
+
+func portMO2Directory(oldMo2ExePath, newGameRoot string, progressCb func(float64, string)) error {
+	// Исходная папка MO2 (на уровень выше от ModOrganizer.exe)
+	srcMo2Dir := filepath.Dir(oldMo2ExePath)
+
+	// Целевая папка MO2 в новой игре
+	dstMo2Dir := filepath.Join(newGameRoot, "MO2")
+
+	if _, err := os.Stat(oldMo2ExePath); os.IsNotExist(err) {
+		return fmt.Errorf("старый ModOrganizer.exe не найден по пути: %s", oldMo2ExePath)
+	}
+
+	// 1. Вычисляем общий размер старой папки MO2 для прогресс-бара
+	expectedSize, err := DirSize(srcMo2Dir)
+	if err != nil || expectedSize == 0 {
+		expectedSize = 1 // Защита от деления на ноль, если папка пуста
+	}
+
+	// 2. Запускаем копирование в отдельной горутине
+	done := make(chan error, 1)
+	go func() {
+		done <- utils.CopyDir(srcMo2Dir, dstMo2Dir)
+	}()
+
+	// 3. Запускаем тикер для отслеживания прогресса (каждые 500мс)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+Loop:
+	for {
+		select {
+		case err := <-done:
+			if err != nil {
+				return fmt.Errorf("ошибка при переносе директории MO2: %w", err)
+			}
+			break Loop
+		case <-ticker.C:
+			if progressCb != nil {
+				currentSize, _ := DirSize(dstMo2Dir)
+				
+				percent := float64(currentSize) / float64(expectedSize)
+				if percent > 0.99 {
+					percent = 0.99
+				}
+
+				gbCurrent := float64(currentSize) / (1024 * 1024 * 1024)
+				gbTotal := float64(expectedSize) / (1024 * 1024 * 1024)
+				
+				msg := fmt.Sprintf("Перенос модов (MO2): %.1f ГБ / %.1f ГБ", gbCurrent, gbTotal)
+				progressCb(percent, msg)
+			}
+		}
+	}
+
+	// Когда горутина завершилась без ошибок, отправляем 100%
+	if progressCb != nil {
+		progressCb(1.0, "Перенос MO2 завершен")
 	}
 
 	return nil
@@ -612,26 +579,6 @@ func hashFile(path string) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
-}
-
-// copySingleFile аккуратно копирует один файл с принудительным сбросом буферов
-func copySingleFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
-	return out.Sync() // Принудительно записываем данные на диск
 }
 
 // safeCopyAndVerify копирует файл или директорию целиком и сверяет хэши каждого файла
@@ -659,7 +606,7 @@ func safeCopyAndVerify(src, dst string) error {
 			}
 
 			// Копируем файл внутри директории
-			if err := copySingleFile(path, targetPath); err != nil {
+			if err := utils.CopyFile(path, targetPath); err != nil {
 				return fmt.Errorf("ошибка копирования %s: %w", path, err)
 			}
 
@@ -685,7 +632,7 @@ func safeCopyAndVerify(src, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
 		return err
 	}
-	if err := copySingleFile(src, dst); err != nil {
+	if err := utils.CopyFile(src, dst); err != nil {
 		return fmt.Errorf("ошибка копирования %s: %w", src, err)
 	}
 
