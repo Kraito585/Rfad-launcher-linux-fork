@@ -1,34 +1,15 @@
 steps:
   build-artifacts:
-    image: ubuntu:24.04
+    image: golang:1.22-bookworm
     timeout: 2h
-    environment:
-      DEBIAN_FRONTEND: noninteractive
-      APPIMAGE_EXTRACT_AND_RUN: "1"
-    secrets: [GOOGLE_CREDENTIALS]
+    volumes:
+      # Пробрасываем сокет хоста, чтобы wails мог использовать Docker
+      - /var/run/docker.sock:/var/run/docker.sock
     commands:
-      - apt-get update
-      - apt-get install -y curl wget git build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev file
-      - curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-      - apt-get install -y nodejs
-      - wget https://go.dev/dl/go1.22.5.linux-amd64.tar.gz
-      - tar -C /usr/local -xzf go1.22.5.linux-amd64.tar.gz
-      - export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
+      - apt-get update && apt-get install -y docker.io
       - go install github.com/wailsapp/wails/v3/cmd/wails3@latest
-      - mkdir -p embed
-      - echo "$GOOGLE_CREDENTIALS" > embed/credentials.json
+      - DOCKER_BUILDKIT=1 wails3 task setup:docker
       - wails3 task linux:package
-      - cd bin
-      - export APP_IMG=$(ls *.AppImage | head -n 1)
-      - ./$APP_IMG --appimage-extract
-      - mkdir -p squashfs-root/usr/lib/x86_64-linux-gnu/webkitgtk-6.0
-      - cp -a /usr/lib/x86_64-linux-gnu/webkitgtk-6.0/* squashfs-root/usr/lib/x86_64-linux-gnu/webkitgtk-6.0/
-      - wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
-      - chmod +x appimagetool
-      - ./appimagetool squashfs-root $APP_IMG
-      - rm -rf squashfs-root appimagetool
-      - cd ..
-
       - |
         if [ ! -f "CHANGELOG.md" ]; then
           echo "$CI_COMMIT_MESSAGE" > CHANGELOG.md
