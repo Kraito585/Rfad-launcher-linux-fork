@@ -33,30 +33,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV GODEBUG=netdns=cgo
 RUN go install mvdan.cc/garble@${GARBLE_VERSION}
 
-# Install Zig - automatically selects correct binary for host architecture.
-# The SHA-256 is fetched from Zig's official download manifest and verified
-# before extraction to protect against MITM or corrupted downloads.
+# Install Zig - automatically selects correct binary with Multi-Mirror Fallback
 ARG ZIG_VERSION=0.14.0
 RUN ZIG_ARCH=$(case "${TARGETARCH}" in arm64) echo "aarch64" ;; *) echo "x86_64" ;; esac) && \
     ZIG_FILE="zig-linux-${ZIG_ARCH}-${ZIG_VERSION}.tar.xz" && \
-    URL_OFFICIAL="https://ziglang.org/download/${ZIG_VERSION}/${ZIG_FILE}" && \
-    URL_MIRROR="https://mirror.nju.edu.cn/zig/download/${ZIG_VERSION}/${ZIG_FILE}" && \
-    JSON_OFFICIAL="https://ziglang.org/download/index.json" && \
-    JSON_MIRROR="https://mirror.nju.edu.cn/zig/download/index.json" && \
-    echo "Downloading Zig..." && \
-    # Пытаемся скачать с оригинала, даем максимум 15 секунд на соединение и 60 секунд на всю скачку
-    if curl -fSL --connect-timeout 15 --max-time 60 "$URL_OFFICIAL" -o "/tmp/${ZIG_FILE}"; then \
-        JSON_URL="$JSON_OFFICIAL"; \
-        echo "Successfully downloaded from official source."; \
-    else \
-        echo "Official source blocked or timed out. Switching to NJU mirror..." && \
-        curl -fSL "$URL_MIRROR" -o "/tmp/${ZIG_FILE}" && \
-        JSON_URL="$JSON_MIRROR"; \
-    fi && \
-    EXPECTED=$(curl -fsSL "$JSON_URL" | \
-        python3 -c "import json,sys; d=json.load(sys.stdin); print(d[sys.argv[1]][sys.argv[2]+'-linux']['shasum'])" \
-        "${ZIG_VERSION}" "${ZIG_ARCH}") && \
-    echo "${EXPECTED}  /tmp/${ZIG_FILE}" | sha256sum -c - && \
+    SUCCESS=0 && \
+    for MIRROR in \
+        "https://ziglang.org" \
+        "https://mirrors.ustc.edu.cn/zig" \
+        "https://mirror.sjtu.edu.cn/zig" \
+        "https://mirrors.bfsu.edu.cn/zig" \
+    ; do \
+        echo "Trying mirror: ${MIRROR}..." && \
+        if curl -fSL --connect-timeout 15 --max-time 60 "${MIRROR}/download/${ZIG_VERSION}/${ZIG_FILE}" -o "/tmp/${ZIG_FILE}"; then \
+            echo "Download successful, verifying checksum..." && \
+            EXPECTED=$(curl -fsSL --max-time 30 "${MIRROR}/download/index.json" | \
+                python3 -c "import json,sys; d=json.load(sys.stdin); print(d[sys.argv[1]][sys.argv[2]+'-linux']['shasum'])" \
+                "${ZIG_VERSION}" "${ZIG_ARCH}") && \
+            if echo "${EXPECTED}  /tmp/${ZIG_FILE}" | sha256sum -c -; then \
+                SUCCESS=1; \
+                break; \
+            else \
+                echo "Checksum failed for ${MIRROR}"; \
+            fi; \
+        else \
+            echo "Mirror ${MIRROR} failed or timed out. Moving to next..."; \
+        fi; \
+    done && \
+    if [ "$SUCCESS" -eq 0 ]; then echo "FATAL: All mirrors failed"; exit 1; fi && \
     tar -xJ -f "/tmp/${ZIG_FILE}" -C /opt && \
     rm "/tmp/${ZIG_FILE}" && \
     ln -s /opt/zig-linux-${ZIG_ARCH}-${ZIG_VERSION}/zig /usr/local/bin/zig
