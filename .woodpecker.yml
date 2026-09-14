@@ -87,19 +87,17 @@ steps:
     image: ubuntu:24.04
     environment:
       DEBIAN_FRONTEND: noninteractive
-      APPIMAGE_EXTRACT_AND_RUN: "1"
     commands:
       - apt-get update
-      - apt-get install -y binutils libc-bin
-      - chmod +x bin/rfadlauncherlinux-x86_64.AppImage
-      - cd bin && ./rfadlauncherlinux-x86_64.AppImage --appimage-extract
+      # Устанавливаем нативный DEB пакет. apt автоматически подтянет X11, Wayland и прочие зависимости.
+      - apt-get install -y ./bin/RFADLauncherLinux.deb
       - |
-        if ldd squashfs-root/usr/bin/RFADLauncherLinux | grep -q "not found"; then
-          echo "КРИТИЧЕСКАЯ ОШИБКА: В Ubuntu не хватает библиотек для AppImage!";
-          ldd squashfs-root/usr/bin/RFADLauncherLinux | grep "not found";
+        if ldd /usr/bin/RFADLauncherLinux | grep -q "not found"; then
+          echo "КРИТИЧЕСКАЯ ОШИБКА: Отсутствуют зависимости!";
+          ldd /usr/bin/RFADLauncherLinux | grep "not found";
           exit 1;
         else
-          echo "AppImage успешно прошел проверку на Ubuntu!";
+          echo "Все зависимости Ubuntu успешно разрешены!";
         fi
 
   # === 3. ЭТАП ПУБЛИКАЦИИ ===

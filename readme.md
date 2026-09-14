@@ -15,11 +15,11 @@
 
 |    x    | AppImage | deb | rpm |
 | :-----: | :------: | :-: | :-: |
-| Debian  |    x     |  ✓  |  x  |
+| Debian  |    \*    |  ✓  |  x  |
 | Garuda  |    ✓     |  x  |  x  |
 | CachyOS |    ✓     |  x  |  x  |
 | Fedora  |    x     |  ✓  |  ✓  |
-| Ubuntu  |    ✓     |  ✓  |  ✓  |
+| Ubuntu  |    \*    |  ✓  |  ✓  |
 
 ## Частые вопросы:
 
