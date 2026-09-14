@@ -7,6 +7,12 @@ steps:
     commands:
       - apt-get update && apt-get install -y docker.io build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
       - go install github.com/wailsapp/wails/v3/cmd/wails3@latest
+
+      # Хирургический фикс: принудительный IPv4 только для скачивания исходников Zig и macOS SDK
+      - sed -i 's/curl -fSL/curl -4 -fSL/g' build/docker/Dockerfile.cross
+      - sed -i 's/curl -fsSL/curl -4 -fsSL/g' build/docker/Dockerfile.cross
+      - sed -i 's/curl -L/curl -4 -L/g' build/docker/Dockerfile.cross
+
       - DOCKER_BUILDKIT=1 wails3 task setup:docker
       - wails3 task linux:package
       - |
