@@ -8,13 +8,18 @@ steps:
       - apt-get update && apt-get install -y docker.io build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
       - go install github.com/wailsapp/wails/v3/cmd/wails3@latest
 
-      # Хирургический фикс: принудительный IPv4 только для скачивания исходников Zig и macOS SDK
-      - sed -i 's/curl -fSL/curl -4 -fSL/g' build/docker/Dockerfile.cross
-      - sed -i 's/curl -fsSL/curl -4 -fsSL/g' build/docker/Dockerfile.cross
-      - sed -i 's/curl -L/curl -4 -L/g' build/docker/Dockerfile.cross
+      # 1. Создаем изолированную сеть с бронебойным размером пакета (MTU 1350)
+      - docker network create --driver bridge --opt com.docker.network.driver.mtu=1350 safe-build-net || true
+
+      # 2. Вырезаем из Taskfile сеть хоста (так как она сломана провайдером)
+      - sed -i 's/--network=host //g' build/Taskfile.yml
+
+      # 3. Заставляем Docker собирать образы строго через нашу безопасную сеть
+      - sed -i 's/docker build/docker build --network=safe-build-net/g' build/Taskfile.yml
 
       - DOCKER_BUILDKIT=1 wails3 task setup:docker
       - wails3 task linux:package
+
       - |
         if [ ! -f "CHANGELOG.md" ]; then
           echo "$CI_COMMIT_MESSAGE" > CHANGELOG.md
