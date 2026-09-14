@@ -4,6 +4,7 @@ import (
 	"embed"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -19,6 +20,10 @@ var version = "dev"
 func init() {
 	os.Setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
 	os.Setenv("GDK_BACKEND", "x11")
+
+	if appDir := os.Getenv("APPDIR"); appDir != "" {
+		os.Setenv("WEBKIT_EXEC_PATH", filepath.Join(appDir, "usr", "lib", "x86_64-linux-gnu", "webkitgtk-6.0"))
+	}
 }
 
 func main() {
