@@ -39,8 +39,21 @@ RUN go install mvdan.cc/garble@${GARBLE_VERSION}
 ARG ZIG_VERSION=0.14.0
 RUN ZIG_ARCH=$(case "${TARGETARCH}" in arm64) echo "aarch64" ;; *) echo "x86_64" ;; esac) && \
     ZIG_FILE="zig-linux-${ZIG_ARCH}-${ZIG_VERSION}.tar.xz" && \
-    curl -fSL "https://ziglang.org/download/${ZIG_VERSION}/${ZIG_FILE}" -o "/tmp/${ZIG_FILE}" && \
-    EXPECTED=$(curl -fsSL "https://ziglang.org/download/index.json" | \
+    URL_OFFICIAL="https://ziglang.org/download/${ZIG_VERSION}/${ZIG_FILE}" && \
+    URL_MIRROR="https://mirror.nju.edu.cn/zig/download/${ZIG_VERSION}/${ZIG_FILE}" && \
+    JSON_OFFICIAL="https://ziglang.org/download/index.json" && \
+    JSON_MIRROR="https://mirror.nju.edu.cn/zig/download/index.json" && \
+    echo "Downloading Zig..." && \
+    # Пытаемся скачать с оригинала, даем максимум 15 секунд на соединение и 60 секунд на всю скачку
+    if curl -fSL --connect-timeout 15 --max-time 60 "$URL_OFFICIAL" -o "/tmp/${ZIG_FILE}"; then \
+        JSON_URL="$JSON_OFFICIAL"; \
+        echo "Successfully downloaded from official source."; \
+    else \
+        echo "Official source blocked or timed out. Switching to NJU mirror..." && \
+        curl -fSL "$URL_MIRROR" -o "/tmp/${ZIG_FILE}" && \
+        JSON_URL="$JSON_MIRROR"; \
+    fi && \
+    EXPECTED=$(curl -fsSL "$JSON_URL" | \
         python3 -c "import json,sys; d=json.load(sys.stdin); print(d[sys.argv[1]][sys.argv[2]+'-linux']['shasum'])" \
         "${ZIG_VERSION}" "${ZIG_ARCH}") && \
     echo "${EXPECTED}  /tmp/${ZIG_FILE}" | sha256sum -c - && \
