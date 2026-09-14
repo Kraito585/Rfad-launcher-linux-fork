@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
+// ИСПРАВЛЕНИЕ: Импортируем все функции как модуль App, точно так же, как в index.vue
+import * as App from '~/bindings/rfad-launcher-linux/app';
 import MessageBox from '~/components/base/MessageBox.vue';
 import CloseIcon from '~/components/icons/X.vue';
 import Cog from '~/components/icons/Cog.vue';
@@ -30,7 +32,7 @@ const settings = ref({
 onMounted(async () => {
   document.addEventListener('click', handleClickOutside);
   try {
-    const data = await window.go.main.App.GetGameSettings();
+    const data = await App.GetGameSettings();
     if (data) {
       const parsed = typeof data === 'string' ? JSON.parse(data) : data;
       settings.value = { ...settings.value, ...parsed };
@@ -81,7 +83,7 @@ const setFsrLvl = async (lvl: string) => {
 
 const sendToBackend = async (key: string, value: boolean | string) => {
   try {
-    await window.go.main.App.UpdateSetting(key, value);
+    await App.UpdateSetting(key, value);
     console.log(`[Settings] ${key} сохранено:`, value);
   } catch (e) {
     console.error(`[Settings] Ошибка при сохранении ${key}:`, e);

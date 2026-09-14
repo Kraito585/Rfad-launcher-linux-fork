@@ -1,7 +1,6 @@
 package unpacksteamfix
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,7 +9,7 @@ import (
 	"strings"
 )
 
-func UnpackSteamFix(ctx context.Context, gameRoot string, unpackCb func(float64, string)) error {
+func UnpackSteamFix(gameRoot string, unpackCb func(float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	steamFixPath, err := utils.GetDownloadedPath(destDir, "steamfix")
 	if err != nil || steamFixPath == "" {
@@ -25,7 +24,7 @@ func UnpackSteamFix(ctx context.Context, gameRoot string, unpackCb func(float64,
 	nestedTempDir := filepath.Join(gameRoot, "temp_steamfix_nested")
 	defer os.RemoveAll(nestedTempDir)
 
-	if err := utils.ExtractArchive(ctx, steamFixPath, tempDir, func(p float64, msg string) {
+	if err := utils.ExtractArchive(steamFixPath, tempDir, func(p float64, msg string) {
 		if unpackCb != nil {
 			unpackCb(p*50, fmt.Sprintf("SteamFix: %s", msg)) // Выделяем 50% на первый этап
 		}
@@ -49,7 +48,8 @@ func UnpackSteamFix(ctx context.Context, gameRoot string, unpackCb func(float64,
 	if nestedArchivePath != "" {
 		slog.Info("Обнаружен вложенный архив SteamFix. Распаковываем...", "file", nestedArchivePath)
 		os.MkdirAll(nestedTempDir, 0755)
-		err := utils.ExtractArchive(ctx, nestedArchivePath, nestedTempDir, func(p float64, msg string) {
+
+		err := utils.ExtractArchive(nestedArchivePath, nestedTempDir, func(p float64, msg string) {
 			if unpackCb != nil {
 				unpackCb(50+(p*50), fmt.Sprintf("Вложенный архив: %s", msg))
 			}

@@ -1,8 +1,13 @@
 embed/credentials.json
-build/bin
+bin/*
 frontend/node_modules
 frontend/dist
 frontend/.nuxt
 frontend/.output
+frontend/bindings
 gdrive
 run.test.sh
+*.log
+RFAD_Launcher-x86_64.AppImage
+.task
+.bindings*

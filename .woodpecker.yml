@@ -1,82 +1,118 @@
 steps:
-  build-appimage:
-    image: ubuntu:22.04
+  build-artifacts:
+    image: ubuntu:24.04
+    timeout: 2h
     environment:
       DEBIAN_FRONTEND: noninteractive
-      # Этот флаг критически важен для Docker
       APPIMAGE_EXTRACT_AND_RUN: "1"
-      OUTPUT: RFAD-Launcher-x86_64.AppImage
-    # secrets должен быть здесь, на одном уровне с environment и commands
-    secrets: [ GOOGLE_CREDENTIALS ] 
+    secrets: [GOOGLE_CREDENTIALS]
     commands:
-      # 1. Установка базовых системных зависимостей
       - apt-get update
-      - apt-get install -y curl wget git build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev desktop-file-utils file libglib2.0-bin
-
-      # 2. Установка Node.js 20
+      - apt-get install -y curl wget git build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev file
       - curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
       - apt-get install -y nodejs
-
-      # 3. Установка Go
       - wget https://go.dev/dl/go1.22.5.linux-amd64.tar.gz
       - tar -C /usr/local -xzf go1.22.5.linux-amd64.tar.gz
       - export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
-
-      # 4. Установка Wails CLI и компиляция лаунчера
-      - go install github.com/wailsapp/wails/v2/cmd/wails@latest
+      - go install github.com/wailsapp/wails/v3/cmd/wails3@latest
       - mkdir -p embed
       - echo "$GOOGLE_CREDENTIALS" > embed/credentials.json
-      - wails build -platform linux/amd64 -m
-
-      # 5. Подготовка утилит AppImage
-      - wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-      - wget https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
-      - chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh
-
-      # 6. Создание файловой структуры AppDir
-      - mkdir -p AppDir/usr/bin
-      - mkdir -p AppDir/usr/share/applications
-      - mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-      
-      # Копирование вспомогательных процессов WebKit2GTK внутрь AppDir (КРИТИЧНО ДЛЯ STEAM DECK)
-      - mkdir -p AppDir/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1
-      - cp -a /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/* AppDir/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/ || true
-      
-      # Копируем бинарник и иконки
-      - cp build/bin/RFADLauncherLinux AppDir/usr/bin/
-      - cp build/appicon.png AppDir/rfad.png
-      - cp build/appicon.png AppDir/usr/share/icons/hicolor/256x256/apps/rfad.png
-      
-      # Генерируем .desktop файл
-      - |
-        cat <<EOF > AppDir/usr/share/applications/rfad.desktop
-        [Desktop Entry]
-        Name=RFAD Launcher
-        Exec=RFADLauncherLinux
-        Icon=rfad
-        Type=Application
-        Categories=Game;
-        EOF
-        
-      # 7. Финальная сборка и упаковка AppImage
-      - ./linuxdeploy-x86_64.AppImage --appdir AppDir -e AppDir/usr/bin/RFADLauncherLinux -d AppDir/usr/share/applications/rfad.desktop -i AppDir/rfad.png --plugin gtk --output appimage
-
-      # 8. Гарантированное создание CHANGELOG.md (чтобы описание релиза не ломалось)
+      - wails3 task linux:package
       - |
         if [ ! -f "CHANGELOG.md" ]; then
           echo "$CI_COMMIT_MESSAGE" > CHANGELOG.md
         fi
 
-  # Шаг загрузки в GitHub Releases
+  # === 2. ЭТАП ТЕСТИРОВАНИЯ ЗАВИСИМОСТЕЙ ===
+  test-cachyos:
+    image: cachyos/cachyos:latest
+    commands:
+      # Устанавливаем графические либы, которые и так есть у десктопных пользователей
+      - pacman -Syu --noconfirm libx11 wayland harfbuzz fribidi mesa libdrm fontconfig
+      # Устанавливаем родной пакет ZST
+      - pacman -U --noconfirm bin/RFADLauncherLinux.pkg.tar.zst
+      - |
+        if ldd /usr/bin/RFADLauncherLinux | grep -q "not found"; then
+          echo "КРИТИЧЕСКАЯ ОШИБКА: Отсутствуют зависимости!";
+          ldd /usr/bin/RFADLauncherLinux | grep "not found";
+          exit 1;
+        else
+          echo "Все зависимости CachyOS успешно разрешены!";
+        fi
+
+  test-garuda:
+    image: archlinux:latest # Официального образа Garuda нет, используем Arch как базу
+    commands:
+      - pacman -Syu --noconfirm libx11 wayland harfbuzz fribidi mesa libdrm fontconfig
+      - pacman -U --noconfirm bin/RFADLauncherLinux.pkg.tar.zst
+      - |
+        if ldd /usr/bin/RFADLauncherLinux | grep -q "not found"; then
+          echo "КРИТИЧЕСКАЯ ОШИБКА: Отсутствуют зависимости!";
+          ldd /usr/bin/RFADLauncherLinux | grep "not found";
+          exit 1;
+        else
+          echo "Все зависимости Garuda/Arch успешно разрешены!";
+        fi
+
+  test-debian:
+    image: debian:12-slim
+    environment:
+      DEBIAN_FRONTEND: noninteractive
+    commands:
+      - apt-get update
+      - apt-get install -y ./bin/RFADLauncherLinux.deb
+      - |
+        if ldd /usr/bin/RFADLauncherLinux | grep -q "not found"; then
+          echo "КРИТИЧЕСКАЯ ОШИБКА: Отсутствуют зависимости!";
+          ldd /usr/bin/RFADLauncherLinux | grep "not found";
+          exit 1;
+        else
+          echo "Все зависимости DEB успешно разрешены!";
+        fi
+
+  test-fedora:
+    image: fedora:40
+    commands:
+      - dnf install -y ./bin/RFADLauncherLinux.rpm
+      - |
+        if ldd /usr/bin/RFADLauncherLinux | grep -q "not found"; then
+          echo "КРИТИЧЕСКАЯ ОШИБКА: Отсутствуют зависимости!";
+          ldd /usr/bin/RFADLauncherLinux | grep "not found";
+          exit 1;
+        else
+          echo "Все зависимости RPM успешно разрешены!";
+        fi
+
+  test-ubuntu:
+    image: ubuntu:24.04
+    environment:
+      DEBIAN_FRONTEND: noninteractive
+    commands:
+      - apt-get update
+      # Устанавливаем нативный DEB пакет. apt автоматически подтянет X11, Wayland и прочие зависимости.
+      - apt-get install -y ./bin/RFADLauncherLinux.deb
+      - |
+        if ldd /usr/bin/RFADLauncherLinux | grep -q "not found"; then
+          echo "КРИТИЧЕСКАЯ ОШИБКА: Отсутствуют зависимости!";
+          ldd /usr/bin/RFADLauncherLinux | grep "not found";
+          exit 1;
+        else
+          echo "Все зависимости Ubuntu успешно разрешены!";
+        fi
+
+  # === 3. ЭТАП ПУБЛИКАЦИИ ===
   publish-github:
     image: woodpeckerci/plugin-release
     settings:
       api_key:
         from_secret: github_token
       files:
-        - RFAD-Launcher-x86_64.AppImage
-        - build/bin/RFADLauncherLinux
+        - bin/RFADLauncherLinux
+        - bin/rfadlauncherlinux-x86_64.AppImage
+        - bin/RFADLauncherLinux.deb
+        - bin/RFADLauncherLinux.rpm
+        - bin/RFADLauncherLinux.pkg.tar.zst
       title: "RFAD Launcher ${CI_COMMIT_TAG}"
-      note: CHANGELOG.md 
+      note: CHANGELOG.md
     when:
       - event: tag

@@ -3,8 +3,8 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	application "github.com/wailsapp/wails/v3/pkg/application"
 )
 
 type GameSettings struct {
@@ -36,41 +36,55 @@ type GameSettings struct {
 	ShaderCache      bool   `json:"shaderCache"`
 	Hdr              bool   `json:"hdr"`
 	SteamFix         bool   `json:"steamFix"`
-	Cdn              bool   `json:"cdn"`
 	FpsLimit         string `json:"fpsLimit"`
 	WineDllOverrides string `json:"wineDllOverrides"`
 	GrafikMod        string `json:"grafikMod"`
 	FsrLvl           string `json:"fsrLvl"`
 }
 
+const systemConfigPath = "~/.config/rfad-launcher/launcher.conf"
+
 type App struct {
-	ctx context.Context
 }
 
 func NewApp() *App {
 	return &App{}
 }
 
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
+func (a *App) startup() {
 	slog.Info("App started")
 }
 
-func (a *App) shutdown(ctx context.Context) {
+func (a *App) shutdown() {
 	slog.Info("App shutting down")
 }
 
-// ============================================================
-//  МЕТОДЫ, ВЫЗЫВАЕМЫЕ ИЗ ФРОНТЕНДА (заглушки)
-// ============================================================
+// ServiceStartup вызывается Wails при старте приложения.
+func (a *App) ServiceStartup(options application.ServiceOptions) error {
+	a.startup()
+	return nil
+}
+
+// ServiceShutdown вызывается Wails при завершении приложения.
+func (a *App) ServiceShutdown() error {
+	a.shutdown()
+	return nil
+}
 
 func (a *App) IsPathExist() bool {
-	status, err := core.IsPathExist(a.ctx, GetGameRoot())
-	if err != nil {
-		panic("uncown error")
+	filePath := filepath.Join(GetGameRoot(), "MO2", "ModOrganizer.exe")
+
+	_, err := os.Stat(filePath)
+	if err == nil {
+		return true
 	}
-	return status
+	if errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+
+	panic("unknown error")
 }
+
 func (a *App) GetLocalVersion() string {
 	slog.Info("GetLocalVersion called")
 
@@ -88,10 +102,8 @@ func (a *App) GetLocalVersion() string {
 		return "0.0"
 	}
 
-	// ВАЖНО: Удаляем невидимый символ BOM, если он есть (часто оставляет блокнот Windows)
 	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 
-	// Теперь очищаем строку от переносов (\n, \r) и пробелов
 	version := strings.TrimSpace(string(data))
 
 	if version == "" {
@@ -235,63 +247,46 @@ func (a *App) LoadPatches() string {
 	return string(resultJSON)
 }
 
-func (a *App) GetFramerateLimit() int {
-	slog.Info("GetFramerateLimit called")
-	return 60
-}
-
-func (a *App) GetVoiceLocale() string {
-	slog.Info("GetVoiceLocale called")
-	return "ru"
-}
-
-func (a *App) UpdateGameSettings(framerate int, voice string) error {
-	slog.Info("UpdateGameSettings called", "framerate", framerate, "voice", voice)
-	return nil
-}
-
 func (a *App) Update() error {
 	slog.Info("Начало процесса обновления игры")
 
 	gameRoot := GetGameRoot()
-	creds := getCreds()
 
 	// ==========================================
 	// 1. ЭТАП ЗАГРУЗКИ ОБНОВЛЕНИЯ
 	// ==========================================
-	wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "download-started"})
+	application.Get().Event.Emit("update-status", map[string]string{"status": "download-started"})
 
 	downloadCb := func(p float64, speed float64, msg string) {
 		speedMB := speed / 1024 / 1024
-		wailsRuntime.EventsEmit(a.ctx, "download-progress", map[string]interface{}{
+		application.Get().Event.Emit("download-progress", map[string]interface{}{
 			"fileName":         msg,
 			"percentage":       p * 100,
 			"speedBytesPerSec": fmt.Sprintf("%.1f", speedMB),
 		})
 	}
 
-	// Передаем cfg.CDN в функцию
-	if err := rfad_update.DownloadUpdate(a.ctx, gameRoot, creds, downloadCb); err != nil {
+	if err := rfad_update.DownloadUpdate(gameRoot, downloadCb); err != nil {
 		slog.Error("Ошибка при скачивании обновления", "error", err)
 		return err
 	}
 
-	wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "download-finished"})
+	application.Get().Event.Emit("update-status", map[string]string{"status": "download-finished"})
 
-	wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-started"})
+	application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-started"})
 
 	unpackCb := func(p float64, msg string) {
-		wailsRuntime.EventsEmit(a.ctx, "unpack-progress", map[string]interface{}{
+		application.Get().Event.Emit("unpack-progress", map[string]interface{}{
 			"percentage": p * 100,
 		})
 	}
 
-	if err := rfad_update.InstallUpdate(a.ctx, gameRoot, unpackCb); err != nil {
+	if err := rfad_update.InstallUpdate(gameRoot, unpackCb); err != nil {
 		slog.Error("Ошибка при распаковке обновления", "error", err)
 		return err
 	}
 
-	wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-finished"})
+	application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-finished"})
 	slog.Info("Обновление успешно завершено!")
 
 	return nil
@@ -303,7 +298,7 @@ func (a *App) OpenExplorer() error {
 
 	err := cmd.Start()
 	if err != nil {
-		slog.Warn("Не удалось открыть директорию: %v", err)
+		slog.Warn("Не удалось открыть директорию", "err", err)
 	}
 	return nil
 }
@@ -327,7 +322,7 @@ func (a *App) OpenMO2() error {
 
 	var mo2Args string
 
-	if err := core.StartMO2(a.ctx, gameRoot, scriptContent, mo2Args, false); err != nil {
+	if err := core.StartMO2(gameRoot, scriptContent, mo2Args, false); err != nil {
 		slog.Error("StartMO2 failed", "error", err)
 		return err
 	}
@@ -355,14 +350,14 @@ func (a *App) StartGame() error {
 	enableGamescope := false
 
 	// Читаем конфиг, чтобы понять, нужен ли нам Gamescope для FSR
-	cfg, err := core.GetLauncherConfig(gameRoot)
+	cfg, err := utils.GetLauncherConfig()
 	if err == nil && cfg != nil {
 		// Проверяем условия: включен Wine FSR и это НЕ CommunityShader
 		if cfg.FSR && cfg.GrafikMod != "CommunityShader" {
 			if _, err := exec.LookPath("gamescope"); err != nil {
 				slog.Warn("Gamescope требуется для FSR, но не найден в системе. Отправляем уведомление в UI.")
 				// Отправляем сигнал во Vue для отображения компонента GamescopeErrorMessage
-				wailsRuntime.EventsEmit(a.ctx, "gamescope-missing")
+				application.Get().Event.Emit("gamescope-missing")
 				enableGamescope = false
 			} else {
 				slog.Info("Gamescope найден в системе, активируем.")
@@ -374,7 +369,7 @@ func (a *App) StartGame() error {
 	}
 
 	// Передаем вычисленный флаг enableGamescope 5-м аргументом
-	if err := core.StartMO2(a.ctx, gameRoot, scriptContent, mo2Args, enableGamescope); err != nil {
+	if err := core.StartMO2(gameRoot, scriptContent, mo2Args, enableGamescope); err != nil {
 		slog.Error("StartGame failed", "error", err)
 		return err
 	}
@@ -383,56 +378,7 @@ func (a *App) StartGame() error {
 }
 
 func (a *App) GetLauncherVersion() string {
-	slog.Info("GetLauncherVersion called")
-	return "0.0.1"
-}
-
-func (a *App) UpdateLauncher(downloadUrl string) error {
-	slog.Info("UpdateLauncher called", "downloadUrl", downloadUrl)
-	return nil
-}
-
-func (a *App) StartNewLauncher() error {
-	slog.Info("StartNewLauncher called")
-	return nil
-}
-
-func (a *App) SelectFile() (string, error) {
-	options := wailsRuntime.OpenDialogOptions{
-		Title: "Выберите установщик игры (.exe или .msi)",
-		Filters: []wailsRuntime.FileFilter{
-			{DisplayName: "Исполняемые файлы", Pattern: "*.exe;*.msi"},
-			{DisplayName: "Все файлы", Pattern: "*.*"},
-		},
-	}
-	return wailsRuntime.OpenFileDialog(a.ctx, options)
-}
-
-func (a *App) SelectDirectory() (string, error) {
-	options := wailsRuntime.OpenDialogOptions{
-		Title: "Выберите папку для установки игры",
-	}
-	return wailsRuntime.OpenDirectoryDialog(a.ctx, options)
-}
-
-func (a *App) ReadFile(path string) (string, error) {
-	slog.Info("ReadFile called", "path", path)
-	return "File content (stub)", nil
-}
-
-func (a *App) WriteFile(path string, content string) error {
-	slog.Info("WriteFile called", "path", path, "content_len", len(content))
-	return nil
-}
-
-func (a *App) GetHomeDir() (string, error) {
-	slog.Info("GetHomeDir called")
-	return os.UserHomeDir()
-}
-
-func (a *App) GetAppVersion() string {
-	slog.Info("GetAppVersion called")
-	return "0.0.1"
+    return version
 }
 
 func (a *App) RunCommand(command string, args []string) (string, error) {
@@ -453,161 +399,264 @@ func (a *App) BrowserOpenURL(url string) error {
 	return nil
 }
 
-func (a *App) ShowMessageDialog(title, message string) error {
-	slog.Info("ShowMessageDialog called", "title", title, "message", message)
-	return nil
-}
-
 func (a *App) GetFirstInstallStatus() bool {
-	// Если GetGameRoot() находится в другом пакете, поправьте вызов (например, core.GetGameRoot())
-	gameRoot := GetGameRoot()
-
-	cfg, err := core.GetLauncherConfig(gameRoot)
+	cfg, err := utils.GetLauncherConfig()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return true
-		}
+		slog.Warn("Не удалось прочитать конфиг при проверке FirstInstall", "error", err)
 		return true
 	}
 	return !cfg.LinuxPatchComplete
 }
 
-func (a *App) InstallGame(installerPath, installPath string) error {
-	cacheDir := filepath.Join(GetGameRoot(), "tmp")
-	err := core.InstallGame(a.ctx, installerPath, installPath, cacheDir, getInnoextract(), func(p float64, msg string) {
-		wailsRuntime.EventsEmit(a.ctx, "install-progress", map[string]interface{}{
+func (a *App) InstallGame(installerPath, installPath, oldMo2Path string) error {
+	cacheDir := filepath.Join(installPath, "tmp")
+
+	err := core.InstallGame(installerPath, installPath, oldMo2Path, cacheDir, getInnoextract(), func(p float64, msg string) {
+		application.Get().Event.Emit("install-progress", map[string]interface{}{
 			"percentage": p,
 			"message":    msg,
 		})
 	})
+
 	if err != nil {
 		slog.Error("InstallGame failed", "error", err)
-		_ = a.ShowMessageDialog("Ошибка", fmt.Sprintf("Не удалось установить игру: %v", err))
+		a.ShowMessageDialog("Ошибка", fmt.Sprintf("Не удалось установить игру: %v", err))
 		return err
-	}
-
-	if err := a.relaunchToGameRoot(installPath); err != nil {
-		slog.Warn("Relaunch failed, but installation is complete", "error", err)
-		// Не возвращаем ошибку, чтобы не сломать восприятие установки
 	}
 
 	return nil
 }
 
+func (a *App) SaveGlobalPath(mo2ExePath string) error {
+	mo2ExePath = strings.Trim(mo2ExePath, "\"' ")
+
+	gameRoot := filepath.Dir(filepath.Dir(mo2ExePath))
+
+	slog.Info("Попытка сохранить глобальный путь", "mo2ExePath", mo2ExePath, "gameRoot", gameRoot)
+
+	if err := utils.SetOneSetting("gameDir", gameRoot); err != nil {
+		slog.Error("Не удалось сохранить путь к игре", "error", err)
+		return fmt.Errorf("ошибка сохранения пути: %w", err)
+	}
+	slog.Info("Путь к игре успешно сохранен", "gameDir", gameRoot)
+
+	a.portOldConfig(gameRoot)
+
+	return nil
+}
+
+func (a *App) portOldConfig(gameRoot string) {
+	oldConfigPath := filepath.Join(gameRoot, "launcher_config.txt")
+
+	file, err := os.Open(oldConfigPath)
+	if err != nil {
+		// Если файла нет (например, свежая ручная распаковка), просто игнорируем
+		return
+	}
+	defer file.Close()
+
+	slog.Info("Найден старый launcher_config.txt, начинаем миграцию настроек")
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		// Парсим старый формат "Key: value"
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		val = strings.Trim(val, `"'`) // Очищаем от кавычек на всякий случай
+
+		// Обрабатываем пустые значения (например "FpsLimit:  ")
+		if val == "" {
+			if key == "FpsLimit" {
+				val = "60" // Дефолтное значение для фронтенда
+			} else {
+				val = "false"
+			}
+		}
+
+		// Сохраняем в новый глобальный конфиг (utils.SetOneSetting уже использует формат с пробелом)
+		if err := utils.SetOneSetting(key, val); err != nil {
+			slog.Warn("Не удалось портировать настройку", "key", key, "error", err)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		slog.Error("Ошибка при чтении старого конфига", "error", err)
+	}
+
+	// Закрываем файл перед переименованием
+	file.Close()
+
+	// Переименовываем старый файл, чтобы завершить миграцию
+	backupPath := oldConfigPath + ".bak"
+	if err := os.Rename(oldConfigPath, backupPath); err != nil {
+		slog.Warn("Не удалось переименовать старый конфиг", "error", err)
+	} else {
+		slog.Info("Старый конфиг сохранен как бэкап", "path", backupPath)
+	}
+}
+
 func (a *App) FirstInstall() error { ///Патчи совместимости для Linux одноразовая установка
 	slog.Info("Начало полного процесса установки (Загрузка + Распаковка)")
 	gameRoot := GetGameRoot()
-	creds := getCreds()
 	offlineConfig := getOfflineConfig()
 
 	// 1. Сигнализируем фронтенду, что началась загрузка
-	wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "download-started"})
+	application.Get().Event.Emit("update-status", map[string]string{"status": "download-started"})
 
 	// ЭТАП ЗАГРУЗКИ
 	downloadCb := func(p float64, speed float64, msg string) {
-		wailsRuntime.EventsEmit(a.ctx, "download-progress", map[string]interface{}{
+		application.Get().Event.Emit("download-progress", map[string]interface{}{
 			"fileName":         msg,
 			"percentage":       p * 100, // Убедитесь, что здесь приходит число от 0 до 100 (или от 0 до 1, умноженное на 100)
 			"speedBytesPerSec": speed,
 		})
 	}
 
-	if err := core.FirstDownload(a.ctx, gameRoot, creds, offlineConfig, downloadCb); err != nil {
+	if err := core.FirstDownload(gameRoot, offlineConfig, downloadCb); err != nil {
 		slog.Error("Ошибка при скачивании", "error", err)
 		return err
 	}
 
 	// Сигнализируем, что загрузка окончена
-	wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "download-finished"})
+	application.Get().Event.Emit("update-status", map[string]string{"status": "download-finished"})
 
 	// 2. ЭТАП РАСПАКОВКИ
-	wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-started"})
+	application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-started"})
 
 	unpackCb := func(p float64, msg string) {
-		wailsRuntime.EventsEmit(a.ctx, "unpack-progress", map[string]interface{}{
+		application.Get().Event.Emit("unpack-progress", map[string]interface{}{
 			"percentage": p * 100,
 		})
 	}
 
-	if err := core.FirstInstall(a.ctx, gameRoot, creds, getLibs(), unpackCb); err != nil {
+	if err := core.FirstInstall(gameRoot, getLibs(), unpackCb); err != nil {
 		slog.Error("Ошибка при распаковке", "error", err)
 		return err
 	}
 
 	// Сигнализируем, что распаковка завершена
-	wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-finished"})
+	application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-finished"})
 
 	slog.Info("Установка успешно завершена!")
 	return nil
 }
 
 func GetGameRoot() string {
-	if testRoot := os.Getenv("RFAD_TEST_GAME_ROOT"); testRoot != "" {
+	// 1. Тестовая переменная окружения (высший приоритет для отладки)
+	if testRoot := os.Getenv("RF_TEST_GAME_ROOT"); testRoot != "" {
 		slog.Info("Используется тестовый путь: " + testRoot)
 		return testRoot
 	}
 
-	if appImagePath := os.Getenv("APPIMAGE"); appImagePath != "" {
-		slog.Info("Запуск из AppImage: " + appImagePath)
-		return filepath.Dir(appImagePath)
+	// 2. Ищем сохраненный путь в глобальном конфиге пользователя
+	if savedDir, err := utils.GetOneSetting("gameDir"); err == nil && savedDir != "" {
+		slog.Info("Путь к игре найден в конфиге: " + savedDir)
+		return savedDir
 	}
 
-	exe, err := os.Executable()
-	if err != nil {
-		return ""
-	}
-	slog.Info("Стандартный запуск: " + exe)
-	return filepath.Dir(exe)
+	// Если ничего не найдено — возвращаем пустую строку
+	slog.Info("Путь к игре не найден, требуется ручная настройка")
+	return ""
 }
 
-func (a *App) relaunchToGameRoot(installPath string) error {
-	var sourcePath string
+func (a *App) IntegrateAppImageAndRelaunch() error {
 	appImagePath := os.Getenv("APPIMAGE")
-	if appImagePath != "" {
-		sourcePath = appImagePath
-	} else {
-		exe, err := os.Executable()
-		if err != nil {
-			return err
-		}
-		sourcePath = exe
-	}
 
-	if filepath.Dir(sourcePath) == installPath {
-		slog.Info("Launcher already in game root, skipping copy")
+	// Если переменная APPIMAGE пуста, значит это DEB, RPM или запуск из исходников.
+	// Ничего не перемещаем и не перезапускаем.
+	if appImagePath == "" {
+		slog.Info("Запуск не из AppImage (DEB/RPM). Перемещение и создание ярлыка не требуется.")
 		return nil
 	}
 
-	targetExe := filepath.Join(installPath, filepath.Base(sourcePath))
+	// === Логика только для AppImage ===
 
-	sourceFile, err := os.Open(sourcePath)
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return fmt.Errorf("не удалось открыть исходный файл: %w", err)
-	}
-	defer sourceFile.Close()
-
-	destFile, err := os.OpenFile(targetExe, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
-	if err != nil {
-		return fmt.Errorf("не удалось создать целевой файл: %w", err)
-	}
-	defer destFile.Close()
-
-	if _, err := io.Copy(destFile, sourceFile); err != nil {
-		return fmt.Errorf("ошибка при копировании: %w", err)
+		return fmt.Errorf("не удалось получить домашнюю директорию: %w", err)
 	}
 
-	destFile.Sync()
+	// Безопасное место для AppImage (стандарт для Linux)
+	targetDir := filepath.Join(homeDir, "Applications")
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return fmt.Errorf("не удалось создать директорию %s: %w", targetDir, err)
+	}
 
+	targetExe := filepath.Join(targetDir, "RFADLauncher.AppImage")
+
+	// Если AppImage уже запущен из правильного места, пропускаем перемещение, но можем обновить ярлык
+	if appImagePath == targetExe {
+		slog.Info("AppImage уже находится в Applications, пропускаем копирование")
+		return nil
+	}
+
+	_ = os.Remove(targetExe)
+
+	// Копируем AppImage
+	slog.Info("Интеграция AppImage", "source", appImagePath, "target", targetExe)
+	if err := utils.CopyFile(appImagePath, targetExe); err != nil {
+		return fmt.Errorf("не удалось скопировать AppImage: %w", err)
+	}
+
+	// === Сохраняем иконку ===
+	iconPath := "utilities-terminal" // Фолбэк на стандартную иконку терминала
+	iconDir := filepath.Join(homeDir, ".local", "share", "icons")
+	
+	if err := os.MkdirAll(iconDir, 0755); err == nil {
+		targetIcon := filepath.Join(iconDir, "rfad-launcher.png")
+		// Вызываем getIcon() из пакета main
+		iconData := getIcon()
+		if writeErr := os.WriteFile(targetIcon, iconData, 0644); writeErr != nil {
+			slog.Warn("Не удалось сохранить иконку на диск", "error", writeErr)
+		} else {
+			// Если успешно записали, указываем путь к нашей иконке
+			iconPath = targetIcon
+		}
+	}
+
+	// === Создаем ярлык в меню приложений пользователя ===
+	desktopDir := filepath.Join(homeDir, ".local", "share", "applications")
+	if err := os.MkdirAll(desktopDir, 0755); err == nil {
+		desktopFile := filepath.Join(desktopDir, "rfad-launcher.desktop")
+
+		desktopContent := fmt.Sprintf(`[Desktop Entry]
+			Name=RFAD SE Launcher
+			Comment=Управление и запуск сборки RFAD
+			Exec="%s"
+			Icon=%s
+			Terminal=false
+			Type=Application
+			Categories=Game;
+		`, targetExe, iconPath)
+
+		if writeErr := os.WriteFile(desktopFile, []byte(desktopContent), 0644); writeErr != nil {
+			slog.Warn("Не удалось создать ярлык .desktop", "error", writeErr)
+		} else {
+			slog.Info("Ярлык приложения успешно создан", "path", desktopFile)
+		}
+	}
+
+	// Запускаем перенесенный AppImage
 	cmd := exec.Command(targetExe)
-	cmd.Dir = installPath
 	cmd.Env = os.Environ()
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("не удалось запустить скопированный лаунчер: %w", err)
+		return fmt.Errorf("не удалось запустить интегрированный AppImage: %w", err)
 	}
 
-	slog.Info("Relaunching from", "path", targetExe)
+	slog.Info("Перезапуск из интегрированного AppImage", "path", targetExe)
 
+	// Даем новому процессу время на старт и "убиваем" текущий (из папки Загрузки)
 	go func() {
 		time.Sleep(500 * time.Millisecond)
 		os.Exit(0)
@@ -616,20 +665,49 @@ func (a *App) relaunchToGameRoot(installPath string) error {
 	return nil
 }
 
-func (a *App) GetGameSettings() core.LauncherConfig {
-	gameRoot := GetGameRoot()
+func (a *App) AutoIntegrateAppImage() {
+	appImagePath := os.Getenv("APPIMAGE")
+	
+	// Если это не AppImage (запуск DEB/RPM/go run), просто выходим
+	if appImagePath == "" {
+		return
+	}
 
-	cfg, err := core.GetLauncherConfig(gameRoot)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		slog.Error("AutoIntegrate: не удалось получить домашнюю директорию", "error", err)
+		return
+	}
+
+	targetExe := filepath.Join(homeDir, "Applications", "RFADLauncher.AppImage")
+
+	// Если мы уже запущены из безопасного места, ничего не делаем — можно работать
+	if appImagePath == targetExe {
+		slog.Info("AppImage запущен из безопасной директории, продолжаем работу")
+		return
+	}
+
+	// Если пути не совпадают (например, запуск из ~/Загрузки), принудительно интегрируем и перезапускаем
+	slog.Info("AppImage запущен извне безопасной директории. Начинаем интеграцию (обновление)...", 
+		"currentPath", appImagePath, 
+		"targetPath", targetExe)
+		
+	if err := a.IntegrateAppImageAndRelaunch(); err != nil {
+		slog.Error("Не удалось выполнить автоинтеграцию AppImage", "error", err)
+	}
+}
+
+func (a *App) GetGameSettings() utils.LauncherConfig {
+	cfg, err := utils.GetLauncherConfig()
 	if err != nil {
 		slog.Warn("Не удалось прочитать настройки для UI, используем дефолтные", "err", err)
 		if cfg == nil {
-			cfg = &core.LauncherConfig{
+			cfg = &utils.LauncherConfig{
 				MangoHud:         false,
 				FSR:              false,
 				ShaderCache:      false,
 				HDR:              false,
 				SteamFix:         false,
-				CDN:              false,
 				FpsLimit:         "60",
 				WineDllOverrides: "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b",
 				GrafikMod:        "Нету",
@@ -648,7 +726,7 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 
 	// --- 1. ГОТОВИМ КОЛЛБЭКИ ДЛЯ FRONTEND ---
 	unpackCb := func(p float64, msg string) {
-		wailsRuntime.EventsEmit(a.ctx, "unpack-progress", map[string]interface{}{
+		application.Get().Event.Emit("unpack-progress", map[string]interface{}{
 			"percentage": p,
 			"message":    msg,
 		})
@@ -656,8 +734,8 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 
 	downloadCb := func(p float64, speed float64, msg string) {
 		// Принудительно переключаем UI в режим скачивания (если вызван загрузчик)
-		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "download-started"})
-		wailsRuntime.EventsEmit(a.ctx, "download-progress", map[string]interface{}{
+		application.Get().Event.Emit("update-status", map[string]string{"status": "download-started"})
+		application.Get().Event.Emit("download-progress", map[string]interface{}{
 			"percentage":       p,
 			"speedBytesPerSec": speed,
 			"fileName":         msg,
@@ -667,29 +745,28 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 	// --- 2. МАРШРУТИЗАЦИЯ НАСТРОЕК ---
 	switch key {
 	case "mangoHud":
-		utils.SetOneSetting(gameRoot, "MangoHud:", value)
+		utils.SetOneSetting("MangoHud:", value)
 
 	case "fsr":
-		isFSR := false
-		if valBool, ok := value.(bool); ok {
-			isFSR = valBool
-		} else if valStr, ok := value.(string); ok {
-			isFSR = (strings.TrimSpace(valStr) == "true")
-		}
-
-		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-started"})
-		if err := fsrswitch.ApplyFSR(a.ctx, gameRoot, isFSR); err != nil {
-			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-error"})
+		cfg, err := utils.GetLauncherConfig()
+		if err != nil {
+			slog.Error("Не удалось прочитать конфиг перед сменой FSR уровня", "error", err)
 			return err
 		}
-		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-finished"})
-		return utils.SetOneSetting(gameRoot, "FSR:", value)
+
+		application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-started"})
+		if err := fsrswitch.SyncFSRSettings(gameRoot, cfg.GrafikMod); err != nil {
+			application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
+			return err
+		}
+		application.Get().Event.Emit("update-status", map[string]string{"status": "process-finished"})
+		return utils.SetOneSetting("FSR:", value)
 
 	case "shaderCache":
-		utils.SetOneSetting(gameRoot, "ShaderCache:", value)
+		utils.SetOneSetting("ShaderCache:", value)
 
 	case "hdr":
-		utils.SetOneSetting(gameRoot, "HDR:", value)
+		utils.SetOneSetting("HDR:", value)
 
 	case "steamFix":
 		isSteamFix := false
@@ -699,18 +776,18 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 			isSteamFix = (strings.TrimSpace(valStr) == "true")
 		}
 
-		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-started"})
-		if err := steam_drm_switch.ToggleSteamDRM(a.ctx, gameRoot, isSteamFix, unpackCb); err != nil {
-			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-error"})
+		application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-started"})
+		if err := steam_drm_switch.ToggleSteamDRM(gameRoot, isSteamFix, unpackCb); err != nil {
+			application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
 			return err
 		}
-		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-finished"})
+		application.Get().Event.Emit("update-status", map[string]string{"status": "process-finished"})
 
 	case "fpsLimit":
 		fpsStr := fmt.Sprintf("%v", value)
 
 		// Блокируем интерфейс на долю секунды, чтобы избежать двойных кликов
-		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-started"})
+		application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-started"})
 
 		patches := []config_patcher.ConfigPatch{
 			{
@@ -725,49 +802,53 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 		// Применяем патч
 		if _, err := config_patcher.ApplyPatchesFromJSON(gameRoot, patches, nil); err != nil {
 			slog.Error("Ошибка при установке лимита кадров", "error", err)
-			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-finished"})
+			application.Get().Event.Emit("update-status", map[string]string{"status": "process-finished"})
 			return fmt.Errorf("ошибка обновления SSEDisplayTweaks.ini: %w", err)
 		}
 
-		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-finished"})
+		application.Get().Event.Emit("update-status", map[string]string{"status": "process-finished"})
 
 		// Сохраняем настройку, чтобы лаунчер запомнил выбор при следующем запуске
-		return utils.SetOneSetting(gameRoot, "FPSLimit:", fpsStr)
+		return utils.SetOneSetting("FPSLimit:", fpsStr)
 
 	case "wineDllOverrides":
-		utils.SetOneSetting(gameRoot, "WineDllOverrides:", value)
+		utils.SetOneSetting("WineDllOverrides:", value)
 
 	case "grafikMod":
 		newMod := fmt.Sprintf("%v", value)
 
 		// Блокируем кнопку "Играть" и показываем полосу загрузки
-		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-started"})
+		application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-started"})
 
 		// Вызываем SwitchGrafikMod
-		if err := graficswitch.SwitchGrafikMod(a.ctx, gameRoot, newMod, unpackCb, downloadCb); err != nil {
+		if err := graficswitch.SwitchGrafikMod(gameRoot, newMod, unpackCb, downloadCb); err != nil {
 			slog.Error("Критическая ошибка при смене графического мода", "error", err)
 			// Отправляем process-finished, чтобы интерфейс В ЛЮБОМ СЛУЧАЕ снял блокировку (скрыл прогресс-бар)
-			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-finished"})
+			application.Get().Event.Emit("update-status", map[string]string{"status": "process-finished"})
 			return err
 		}
 
-		if err := fsrswitch.SyncFSRSettings(a.ctx, gameRoot, newMod); err != nil {
+		if err := fsrswitch.SyncFSRSettings(gameRoot, newMod); err != nil {
 			slog.Error("Ошибка подготовки FSR для графического мода", "error", err)
-			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-finished"})
+			application.Get().Event.Emit("update-status", map[string]string{"status": "process-finished"})
 			return fmt.Errorf("ошибка подготовки FSR для мода: %w", err)
 		}
 
 		// Снимаем блокировку интерфейса при успехе
-		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-finished"})
-		return utils.SetOneSetting(gameRoot, "GrafikMod:", newMod)
+		application.Get().Event.Emit("update-status", map[string]string{"status": "process-finished"})
+		return utils.SetOneSetting("GrafikMod:", newMod)
 
 	case "fsrLvl":
-		fsrLvlStr := fmt.Sprintf("%v", value)
-
-		utils.SetOneSetting(gameRoot, "FsrLvl:", value)
-		err := fsrswitch.SyncFSRSettings(a.ctx, gameRoot, fsrLvlStr)
+		cfg, err := utils.GetLauncherConfig()
 		if err != nil {
-			utils.SetOneSetting(gameRoot, "FsrLvl:", true)
+			slog.Error("Не удалось прочитать конфиг перед сменой FSR уровня", "error", err)
+			return err
+		}
+
+		utils.SetOneSetting("FsrLvl:", value)
+		err = fsrswitch.SyncFSRSettings(gameRoot, cfg.GrafikMod)
+		if err != nil {
+			utils.SetOneSetting("FsrLvl:", true)
 			return err
 		}
 
@@ -828,10 +909,10 @@ func (a *App) RecoverComponent(key string, force bool) error {
 	case "proton":
 		slog.Info("Начата полная переустановка Proton/Wine и префикса")
 
-		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "download-started"})
+		application.Get().Event.Emit("update-status", map[string]string{"status": "download-started"})
 
 		downloadCb := func(p float64, speed float64, msg string) {
-			wailsRuntime.EventsEmit(a.ctx, "download-progress", map[string]interface{}{
+			application.Get().Event.Emit("download-progress", map[string]interface{}{
 				"fileName":         msg,
 				"percentage":       p * 100,
 				"speedBytesPerSec": speed,
@@ -839,23 +920,23 @@ func (a *App) RecoverComponent(key string, force bool) error {
 		}
 
 		// 1. Скачиваем Proton
-		err := downloader.DownloadGEProton(a.ctx, gameRoot, true, downloadCb)
+		err := downloader.DownloadGEProton(gameRoot, true, downloadCb)
 		if err != nil {
-			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-error"})
+			application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
 			return fmt.Errorf("ошибка загрузки proton: %w", err)
 		}
 
 		// 2. Скачиваем Prefix (так как мы его тоже будем сносить)
-		err = downloader.DownloadPrefix(a.ctx, gameRoot, getCreds(), true, downloadCb)
+		err = downloader.DownloadPrefix(gameRoot, true, downloadCb)
 		if err != nil {
-			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-error"})
+			application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
 			return fmt.Errorf("ошибка загрузки префикса: %w", err)
 		}
 
-		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-started"})
+		application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-started"})
 
 		unpackCb := func(p float64, msg string) {
-			wailsRuntime.EventsEmit(a.ctx, "unpack-progress", map[string]interface{}{
+			application.Get().Event.Emit("unpack-progress", map[string]interface{}{
 				"percentage": p * 100,
 				"message":    msg,
 			})
@@ -872,9 +953,9 @@ func (a *App) RecoverComponent(key string, force bool) error {
 		// 4. Распаковываем Proton
 		slog.Info("Распаковка Proton")
 		// Предполагается, что у вас есть функция proton_install.UnpackProton (по аналогии с prefix_install)
-		err = proton_install.InstallGEProton(a.ctx, gameRoot, unpackCb)
+		err = proton_install.InstallGEProton(gameRoot, unpackCb)
 		if err != nil {
-			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-error"})
+			application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
 			return fmt.Errorf("ошибка распаковки proton: %w", err)
 		}
 
@@ -884,36 +965,36 @@ func (a *App) RecoverComponent(key string, force bool) error {
 			slog.Warn("Не удалось подготовить встроенные библиотеки при переустановке", "err", err)
 		}
 
-		err = prefix_install.UnpackPrefix(a.ctx, gameRoot, unpackCb)
+		err = prefix_install.UnpackPrefix(gameRoot, unpackCb)
 		if err != nil {
-			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-error"})
+			application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
 			return fmt.Errorf("ошибка распаковки префикса: %w", err)
 		}
 
-		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-finished"})
+		application.Get().Event.Emit("update-status", map[string]string{"status": "process-finished"})
 		slog.Info("Proton и Prefix успешно переустановлены")
 
 	case "prefix":
 		if force {
 			slog.Info("Начата полная переустановка префикса")
 
-			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "download-started"})
+			application.Get().Event.Emit("update-status", map[string]string{"status": "download-started"})
 
 			downloadCb := func(p float64, speed float64, msg string) {
-				wailsRuntime.EventsEmit(a.ctx, "download-progress", map[string]interface{}{
+				application.Get().Event.Emit("download-progress", map[string]interface{}{
 					"fileName":         msg,
 					"percentage":       p * 100,
 					"speedBytesPerSec": speed,
 				})
 			}
 
-			err := downloader.DownloadPrefix(a.ctx, gameRoot, getCreds(), true, downloadCb)
+			err := downloader.DownloadPrefix(gameRoot, true, downloadCb)
 			if err != nil {
-				wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-error"})
+				application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
 				return fmt.Errorf("ошибка загрузки префикса: %w", err)
 			}
 
-			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-started"})
+			application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-started"})
 
 			// 1. Удаляем старый префикс
 			prefixTarget := filepath.Join(gameRoot, "wine", "prefix")
@@ -922,7 +1003,7 @@ func (a *App) RecoverComponent(key string, force bool) error {
 			}
 
 			unpackCb := func(p float64, msg string) {
-				wailsRuntime.EventsEmit(a.ctx, "unpack-progress", map[string]interface{}{
+				application.Get().Event.Emit("unpack-progress", map[string]interface{}{
 					"percentage": p * 100,
 					"message":    msg,
 				})
@@ -934,19 +1015,19 @@ func (a *App) RecoverComponent(key string, force bool) error {
 			}
 
 			// 3. Распаковываем (UnpackPrefix сам очистит wine/tmp/libs и создаст симлинки)
-			err = prefix_install.UnpackPrefix(a.ctx, gameRoot, unpackCb)
+			err = prefix_install.UnpackPrefix(gameRoot, unpackCb)
 			if err != nil {
-				wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-error"})
+				application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
 				return fmt.Errorf("ошибка распаковки префикса: %w", err)
 			}
 
-			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-finished"})
+			application.Get().Event.Emit("update-status", map[string]string{"status": "process-finished"})
 			slog.Info("Префикс успешно переустановлен")
 
 		} else {
 			slog.Info("Начато лечение префикса (перераспаковка и настройка)")
 
-			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-started"})
+			application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-started"})
 
 			prefixDir := filepath.Join(gameRoot, "wine", "prefix")
 
@@ -957,8 +1038,8 @@ func (a *App) RecoverComponent(key string, force bool) error {
 			}
 
 			// 2. Запускаем единый конвейер установки
-			err := prefix_install.UnpackPrefix(a.ctx, gameRoot, func(p float64, msg string) {
-				wailsRuntime.EventsEmit(a.ctx, "unpack-progress", map[string]interface{}{
+			err := prefix_install.UnpackPrefix(gameRoot, func(p float64, msg string) {
+				application.Get().Event.Emit("unpack-progress", map[string]interface{}{
 					"percentage": p,
 					"message":    msg,
 				})
@@ -966,18 +1047,18 @@ func (a *App) RecoverComponent(key string, force bool) error {
 
 			if err != nil {
 				slog.Error("Ошибка при лечении префикса", "error", err)
-				wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-error"})
+				application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
 				return err
 			}
 
-			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-finished"})
+			application.Get().Event.Emit("update-status", map[string]string{"status": "process-finished"})
 			slog.Info("Лечение префикса успешно завершено")
 		}
 
 	case "steamfix":
 		slog.Info("Начато восстановление Steam Fix")
 
-		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "unpack-started"})
+		application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-started"})
 
 		steamFixOnDir := filepath.Join(gameRoot, "disabledGameFiles", "SteamDRM", "on")
 
@@ -986,8 +1067,8 @@ func (a *App) RecoverComponent(key string, force bool) error {
 			slog.Warn("Не удалось удалить старую директорию SteamFix", "error", err)
 		}
 
-		err := unpacksteamfix.UnpackSteamFix(a.ctx, gameRoot, func(p float64, msg string) {
-			wailsRuntime.EventsEmit(a.ctx, "unpack-progress", map[string]interface{}{
+		err := unpacksteamfix.UnpackSteamFix(gameRoot, func(p float64, msg string) {
+			application.Get().Event.Emit("unpack-progress", map[string]interface{}{
 				"percentage": p,
 				"message":    msg,
 			})
@@ -995,23 +1076,23 @@ func (a *App) RecoverComponent(key string, force bool) error {
 
 		if err != nil {
 			slog.Error("Ошибка при распаковке SteamFix", "error", err)
-			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-error"})
+			application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
 			return err
 		}
 
 		// Применяем SteamFix к игре
-		if err := steam_drm_switch.ToggleSteamDRM(a.ctx, gameRoot, false, func(p float64, msg string) {
-			wailsRuntime.EventsEmit(a.ctx, "unpack-progress", map[string]interface{}{
+		if err := steam_drm_switch.ToggleSteamDRM(gameRoot, false, func(p float64, msg string) {
+			application.Get().Event.Emit("unpack-progress", map[string]interface{}{
 				"percentage": p,
 				"message":    msg,
 			})
 		}); err != nil {
 			slog.Error("Ошибка при переключении Steam DRM", "error", err)
-			wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-error"})
+			application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
 			return err
 		}
 
-		wailsRuntime.EventsEmit(a.ctx, "update-status", map[string]string{"status": "process-finished"})
+		application.Get().Event.Emit("update-status", map[string]string{"status": "process-finished"})
 		slog.Info("Восстановление Steam Fix успешно завершено")
 
 	default:
@@ -1021,6 +1102,7 @@ func (a *App) RecoverComponent(key string, force bool) error {
 
 	return nil
 }
+
 func (a *App) CheckCSFilesExist() bool {
 	gameRoot := GetGameRoot()
 	downloadDir := filepath.Join(gameRoot, "download")
@@ -1053,11 +1135,58 @@ func (a *App) CheckCSFilesExist() bool {
 
 func (a *App) Quit() {
 	slog.Info("Quit called")
-	wailsRuntime.Quit(a.ctx)
+	application.Get().Quit()
 }
 
-// Minimize сворачивает окно
 func (a *App) Minimize() {
 	slog.Info("Minimize called")
-	wailsRuntime.WindowMinimise(a.ctx)
+	if w, ok := application.Get().Window.GetByName("main"); ok {
+		w.Minimise()
+	}
+}
+
+// SelectFile открывает системное окно выбора файла
+func (a *App) SelectFile() (string, error) {
+	app := application.Get()
+
+	path, err := app.Dialog.
+		OpenFile().
+		SetTitle("Выберите установщик").
+		AddFilter("Установочные файлы", "*.exe;*.msi").
+		AddFilter("Все файлы", "*.*").
+		PromptForSingleSelection()
+
+	if err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// SelectDirectory открывает системное окно выбора папки
+func (a *App) SelectDirectory() (string, error) {
+	app := application.Get()
+
+	path, err := app.Dialog.
+		OpenFile().
+		SetTitle("Выберите папку для установки").
+		CanChooseDirectories(true).
+		CanChooseFiles(false).
+		PromptForSingleSelection()
+
+	if err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// ShowMessageDialog показывает простое информационное окно
+func (a *App) ShowMessageDialog(title, message string) {
+	app := application.Get()
+
+	// Просто вызываем цепочку методов, не пытаясь вернуть результат
+	app.Dialog.
+		Info().
+		SetTitle(title).
+		SetMessage(message).
+		Show()
 }

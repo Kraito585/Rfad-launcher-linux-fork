@@ -1,7 +1,6 @@
 package recovery
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,7 +14,7 @@ import (
 // PREFIX RECOVERY UTILS
 // ==========================
 
-func RecoverPrefix(ctx context.Context, gameRoot string) error {
+func RecoverPrefix(gameRoot string) error {
 	prefixTarget := filepath.Join(gameRoot, "wine", "prefix")
 	prefixPath := filepath.Join(prefixTarget, "pfx")
 
@@ -53,8 +52,8 @@ func RecoverPrefix(ctx context.Context, gameRoot string) error {
 	)
 
 	// 4. Выполняем wineboot -u для пересоздания структуры
-	// Используем CommandContext для поддержки отмены операции
-	cmd := exec.CommandContext(ctx, wineBin, "wineboot", "-u")
+	// Заменили CommandContext на обычный Command
+	cmd := exec.Command(wineBin, "wineboot", "-u")
 	cmd.Env = env
 
 	// Ждем завершения обновления префикса
@@ -69,7 +68,7 @@ func RecoverPrefix(ctx context.Context, gameRoot string) error {
 
 	// Динамически прописываем скопированные DLL в реестр (чтобы Wine использовал native,builtin)
 	if len(injectedDlls) > 0 {
-		if err := ApplyRegistryOverrides(ctx, env, wineBin, injectedDlls); err != nil {
+		if err := ApplyRegistryOverrides(env, wineBin, injectedDlls); err != nil {
 			slog.Warn("Ошибка модификации реестра", "err", err)
 		}
 	}
@@ -146,7 +145,7 @@ func copyFile(src, dst string) error {
 	return err
 }
 
-func ApplyRegistryOverrides(ctx context.Context, env []string, wineBin string, dlls []string) error {
+func ApplyRegistryOverrides(env []string, wineBin string, dlls []string) error {
 	if len(dlls) == 0 {
 		slog.Info("Список DLL для реестра пуст, пропускаем шаг")
 		return nil
@@ -155,8 +154,8 @@ func ApplyRegistryOverrides(ctx context.Context, env []string, wineBin string, d
 	slog.Info("Запись DLL Overrides в реестр префикса", "количество", len(dlls))
 
 	for _, dll := range dlls {
-		// Команда перезапишет ключ, если он уже есть (благодаря флагу /f)
-		cmd := exec.CommandContext(ctx, wineBin, "reg", "add",
+		// Заменили CommandContext на обычный Command
+		cmd := exec.Command(wineBin, "reg", "add",
 			`HKEY_CURRENT_USER\Software\Wine\DllOverrides`,
 			"/v", dll,
 			"/t", "REG_SZ",
@@ -171,9 +170,5 @@ func ApplyRegistryOverrides(ctx context.Context, env []string, wineBin string, d
 	}
 
 	slog.Info("Реестр успешно обновлен динамическим списком")
-	return nil
-}
-
-func RecoverSteamDRM(ctx context.Context, gameRoot string, creds []byte) error {
 	return nil
 }

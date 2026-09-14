@@ -1,7 +1,6 @@
 package graficswitch
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,7 +13,7 @@ import (
 )
 
 // SwitchGrafikMod управляет переключением между CommunityShader, ENB, ReShade и т.д.
-func SwitchGrafikMod(ctx context.Context, gameRoot string, newMod string, unpackCb func(float64, string), downloadCb func(float64, float64, string)) error {
+func SwitchGrafikMod(gameRoot string, newMod string, unpackCb func(float64, string), downloadCb func(float64, float64, string)) error {
 	if unpackCb != nil {
 		unpackCb(0.05, "Очистка от старых графических модов...")
 	}
@@ -27,8 +26,7 @@ func SwitchGrafikMod(ctx context.Context, gameRoot string, newMod string, unpack
 			unpackCb(0.1, "Настройка Community Shaders...")
 		}
 
-		// Передаем оба коллбэка
-		csFolder, upFolder, err := installCommunityShadersIfNeeded(ctx, gameRoot, unpackCb, downloadCb)
+		csFolder, upFolder, err := installCommunityShadersIfNeeded(gameRoot, unpackCb, downloadCb)
 		if err != nil {
 			return err
 		}
@@ -63,8 +61,7 @@ func SwitchGrafikMod(ctx context.Context, gameRoot string, newMod string, unpack
 		unpackCb(0.9, "Адаптация разрешения и FSR...")
 	}
 
-	// Синхронизация FSR (как и было)
-	if err := fsrswitch.SyncFSRSettings(ctx, gameRoot, newMod); err != nil {
+	if err := fsrswitch.SyncFSRSettings(gameRoot, newMod); err != nil {
 		slog.Warn("Не удалось синхронизовать FSR при смене мода", "error", err)
 	}
 
@@ -76,8 +73,7 @@ func SwitchGrafikMod(ctx context.Context, gameRoot string, newMod string, unpack
 }
 
 // installCommunityShadersIfNeeded проверяет наличие модов в MO2, и если их нет — находит/качает архивы и распаковывает
-
-func installCommunityShadersIfNeeded(ctx context.Context, gameRoot string, unpackCb func(float64, string), downloadCb func(float64, float64, string)) (string, string, error) {
+func installCommunityShadersIfNeeded(gameRoot string, unpackCb func(float64, string), downloadCb func(float64, float64, string)) (string, string, error) {
 	modsDir := filepath.Join(gameRoot, "MO2", "mods")
 	downloadDir := filepath.Join(gameRoot, "download")
 
@@ -111,8 +107,7 @@ func installCommunityShadersIfNeeded(ctx context.Context, gameRoot string, unpac
 			unpackCb(0.2, "Загрузка архивов Community Shaders...")
 		}
 
-		// Теперь мы напрямую передаем чистый downloadCb, так как он поддерживает скорость
-		if err := downloader.DownloadCommunityShaders(ctx, gameRoot, false, downloadCb); err != nil {
+		if err := downloader.DownloadCommunityShaders(gameRoot, false, downloadCb); err != nil {
 			return "", "", fmt.Errorf("ошибка загрузки CS: %w", err)
 		}
 
@@ -127,7 +122,7 @@ func installCommunityShadersIfNeeded(ctx context.Context, gameRoot string, unpac
 		if unpackCb != nil {
 			unpackCb(0.5, "Распаковка Community Shaders...")
 		}
-		folder, err := extractModToMO2(ctx, csArchive, modsDir, unpackCb)
+		folder, err := extractModToMO2(csArchive, modsDir, unpackCb)
 		if err != nil {
 			return "", "", err
 		}
@@ -138,7 +133,7 @@ func installCommunityShadersIfNeeded(ctx context.Context, gameRoot string, unpac
 		if unpackCb != nil {
 			unpackCb(0.7, "Распаковка Upscaler...")
 		}
-		folder, err := extractModToMO2(ctx, upArchive, modsDir, unpackCb)
+		folder, err := extractModToMO2(upArchive, modsDir, unpackCb)
 		if err != nil {
 			return "", "", err
 		}
@@ -232,12 +227,12 @@ func findArchiveByContains(dir, pattern string) string {
 	return ""
 }
 
-func extractModToMO2(ctx context.Context, archivePath, modsDir string, unpackCb func(float64, string)) (string, error) {
+func extractModToMO2(archivePath, modsDir string, unpackCb func(float64, string)) (string, error) {
 	tempDir := filepath.Join(modsDir, "temp_extract_"+filepath.Base(archivePath))
 	os.MkdirAll(tempDir, 0755)
 	defer os.RemoveAll(tempDir)
 
-	if err := utils.ExtractArchive(ctx, archivePath, tempDir, unpackCb); err != nil {
+	if err := utils.ExtractArchive(archivePath, tempDir, unpackCb); err != nil {
 		return "", fmt.Errorf("сбой экстрактора: %w", err)
 	}
 

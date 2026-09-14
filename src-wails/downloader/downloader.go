@@ -18,6 +18,7 @@ import (
 	"google.golang.org/api/option"
 )
 
+const apiGdrive = "AIzaSyAKCjeg6-yNUTVXNzSSRLChCwOOUzEvSiw"
 const yandexAPIBase = "https://cloud-api.yandex.net/v1/disk/public/resources/download"
 
 // Обновленная структура для подсчета глобального прогресса и скорости
@@ -59,7 +60,7 @@ func init() {
 	})))
 }
 
-func DownloadURL(ctx context.Context, downloadUrl, destDir string, progressCb func(float64, float64, string)) (destPath string, err error) {
+func DownloadURL(downloadUrl, destDir string, progressCb func(float64, float64, string)) (destPath string, err error) {
 	if err = os.MkdirAll(destDir, 0755); err != nil {
 		return "", err
 	}
@@ -86,7 +87,8 @@ func DownloadURL(ctx context.Context, downloadUrl, destDir string, progressCb fu
 		}
 	}()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", downloadUrl, nil)
+	// Заменили NewRequestWithContext на стандартный NewRequest
+	req, err := http.NewRequest("GET", downloadUrl, nil)
 	if err != nil {
 		return "", err
 	}
@@ -125,63 +127,61 @@ func DownloadURL(ctx context.Context, downloadUrl, destDir string, progressCb fu
 	return destPath, nil
 }
 
-func DownloadDriveFolder(ctx context.Context, creds []byte, folderID, destDir string, progressCb func(float64, float64, string)) ([]string, error) {
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return nil, err
-	}
-	srv, err := drive.NewService(ctx, option.WithCredentialsJSON(creds))
-	if err != nil {
-		return nil, err
-	}
+func DownloadDriveFolder(folderID, destDir string, progressCb func(float64, float64, string)) ([]string, error) {
+    if err := os.MkdirAll(destDir, 0755); err != nil {
+        return nil, err
+    }
 
-	var files []struct {
-		relPath, id string
-		size        int64
-	}
-	var total int64
+    ctx := context.Background()
+    
+    // Используем константу apiGdrive вместо передачи аргумента
+    srv, err := drive.NewService(ctx, option.WithAPIKey(apiGdrive))
+    if err != nil {
+        return nil, err
+    }
 
-	err = walk(srv, folderID, "", func(rel, id string, size int64) {
-		files = append(files, struct {
-			relPath, id string
-			size        int64
-		}{rel, id, size})
-		total += size
-	})
-	if err != nil {
-		return nil, err
-	}
+    var files []struct {
+        relPath, id string
+        size        int64
+    }
+    var total int64
 
-	var downloaded int64
-	var savedPaths []string
+    err = walk(srv, folderID, "", func(rel, id string, size int64) {
+        files = append(files, struct {
+            relPath, id string
+            size        int64
+        }{rel, id, size})
+        total += size
+    })
+    if err != nil {
+        return nil, err
+    }
 
-	pw := &progressWriter{
-		globalTotal: total,
-		lastTime:    time.Now(),
-		cb:          progressCb,
-	}
+    var downloaded int64
+    var savedPaths []string
 
-	for _, f := range files {
-		select {
-		case <-ctx.Done():
-			return savedPaths, ctx.Err()
-		default:
-		}
-		local := filepath.Join(destDir, f.relPath)
-		os.MkdirAll(filepath.Dir(local), 0755)
+    pw := &progressWriter{
+        globalTotal: total,
+        lastTime:    time.Now(),
+        cb:          progressCb,
+    }
 
-		pw.currentGot = 0
-		// Красивое сообщение с именем файла для UI
-		pw.msg = "Загрузка: " + filepath.Base(f.relPath)
+    for _, f := range files {
+        local := filepath.Join(destDir, f.relPath)
+        os.MkdirAll(filepath.Dir(local), 0755)
 
-		if err := downloadOne(srv, f.id, local, pw); err != nil {
-			return savedPaths, err
-		}
-		savedPaths = append(savedPaths, local)
+        pw.currentGot = 0
+        pw.msg = "Загрузка: " + filepath.Base(f.relPath)
 
-		downloaded += f.size
-		pw.globalBase = downloaded
-	}
-	return savedPaths, nil
+        if err := downloadOne(srv, f.id, local, pw); err != nil {
+            return savedPaths, err
+        }
+        savedPaths = append(savedPaths, local)
+
+        downloaded += f.size
+        pw.globalBase = downloaded
+    }
+    return savedPaths, nil
 }
 
 func walk(srv *drive.Service, folder, rel string, cb func(rel, id string, size int64)) error {
@@ -245,20 +245,24 @@ func downloadOne(srv *drive.Service, id, path string, pw io.Writer) error {
 }
 
 // GetYandexDownloadURL возвращает прямую ссылку и имя файла.
-func GetYandexDownloadURL(ctx context.Context, publicURL string) (directURL, fileName string, err error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", yandexAPIBase+"?public_key="+url.QueryEscape(publicURL), nil)
+func GetYandexDownloadURL(publicURL string) (directURL, fileName string, err error) {
+	// Заменили NewRequestWithContext на NewRequest
+	req, err := http.NewRequest("GET", yandexAPIBase+"?public_key="+url.QueryEscape(publicURL), nil)
 	if err != nil {
 		return "", "", fmt.Errorf("ошибка создания запроса к API Яндекс.Диска: %w", err)
 	}
+
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", "", fmt.Errorf("ошибка соединения с API Яндекс.Диска: %w", err)
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
 		return "", "", fmt.Errorf("API Яндекс.Диска вернул статус %d", resp.StatusCode)
 	}
+
 	var result struct {
 		Href string `json:"href"`
 		Name string `json:"name"`
@@ -273,24 +277,25 @@ func GetYandexDownloadURL(ctx context.Context, publicURL string) (directURL, fil
 		parts := strings.Split(publicURL, "/")
 		result.Name = parts[len(parts)-1]
 	}
+
 	return result.Href, result.Name, nil
 }
 
-func DownloadYandex(ctx context.Context, publicURL, destDir, fileName string, progressCb func(float64, float64, string)) (string, error) {
-	directURL, _, err := GetYandexDownloadURL(ctx, publicURL)
+func DownloadYandex(publicURL, destDir, fileName string, progressCb func(float64, float64, string)) (string, error) {
+	directURL, _, err := GetYandexDownloadURL(publicURL)
 	if err != nil {
 		return "", err
 	}
 	destPath := filepath.Join(destDir, fileName)
 
-	err = downloadFileToPath(ctx, directURL, destPath, fileName, progressCb)
+	err = downloadFileToPath(directURL, destPath, fileName, progressCb)
 	if err != nil {
 		return "", err
 	}
 	return destPath, nil
 }
 
-func downloadFileToPath(ctx context.Context, url, destPath, fileName string, progressCb func(float64, float64, string)) error {
+func downloadFileToPath(url, destPath, fileName string, progressCb func(float64, float64, string)) error {
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return err
 	}
@@ -301,21 +306,23 @@ func downloadFileToPath(ctx context.Context, url, destPath, fileName string, pro
 	}
 	defer func() {
 		out.Close()
-
 		if err != nil {
 			os.Remove(destPath)
 		}
 	}()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	// Заменили NewRequestWithContext на обычный NewRequest
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
 	}
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("HTTP ошибка: %d", resp.StatusCode)
 	}
@@ -449,15 +456,15 @@ func removeDownloadedFiles(destDir, key string) error {
 	return os.WriteFile(statusFile, []byte(output), 0644)
 }
 
-func DownloadUpdate(ctx context.Context, gameRoot string, creds []byte, forceDownload bool, progressCb func(float64, float64, string)) error {
+func DownloadUpdate(gameRoot string, forceDownload bool, progressCb func(float64, float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	key := "update"
 	if !alreadyDownloaded(destDir, key) || forceDownload {
 		removeDownloadedFiles(destDir, key)
 		var paths []string
-		paths, err := DownloadDriveFolder(ctx, creds, UpdateFolderID, destDir, progressCb)
+		paths, err := DownloadDriveFolder(UpdateFolderID, destDir, progressCb)
 		if err != nil {
-			return fmt.Errorf("ошибка получения обновления попробуйте использовать cdn(mirror) %s", err)
+			return fmt.Errorf("ошибка получения обновления попробуйте повторите попытку позже %s", err)
 		}
 		return RewriteStatus(destDir, key, paths...)
 	}
@@ -465,13 +472,13 @@ func DownloadUpdate(ctx context.Context, gameRoot string, creds []byte, forceDow
 	return nil
 }
 
-func DownloadPrefix(ctx context.Context, gameRoot string, creds []byte, forceDownload bool, progressCb func(float64, float64, string)) error {
+func DownloadPrefix(gameRoot string, forceDownload bool, progressCb func(float64, float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	key := "prefix"
 	if !alreadyDownloaded(destDir, key) || forceDownload {
 		removeDownloadedFiles(destDir, key)
 		var path string
-		path, err := DownloadYandex(ctx, YandexPrefixURL, destDir, "pfx dotnet.7z", progressCb)
+		path, err := DownloadYandex(YandexPrefixURL, destDir, "pfx dotnet.7z", progressCb)
 		if err != nil {
 			return fmt.Errorf("ошибка загрузки префикса с Яндекс.Диска: %w", err)
 		}
@@ -481,15 +488,15 @@ func DownloadPrefix(ctx context.Context, gameRoot string, creds []byte, forceDow
 	return nil
 }
 
-func DownloadSteamfix(ctx context.Context, gameRoot string, creds []byte, forceDownload bool, progressCb func(float64, float64, string)) error {
+func DownloadSteamfix(gameRoot string, forceDownload bool, progressCb func(float64, float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	key := "steamfix"
 	if !alreadyDownloaded(destDir, key) || forceDownload {
 		removeDownloadedFiles(destDir, key)
 		var paths []string
-		paths, err := DownloadDriveFolder(ctx, creds, SteamFixID, destDir, progressCb)
+		paths, err := DownloadDriveFolder(SteamFixID, destDir, progressCb)
 		if err != nil {
-			return fmt.Errorf("ошибка получения префикса wine попробуйте использовать cdn(mirror) %s", err)
+			return fmt.Errorf("ошибка получения префикса wine повторите попытку позже %s", err)
 		}
 		return RewriteStatus(destDir, key, paths...)
 	}
@@ -497,13 +504,13 @@ func DownloadSteamfix(ctx context.Context, gameRoot string, creds []byte, forceD
 	return nil
 }
 
-func DownloadGEProton(ctx context.Context, gameRoot string, forceDownload bool, progressCb func(float64, float64, string)) error {
+func DownloadGEProton(gameRoot string, forceDownload bool, progressCb func(float64, float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	key := "GE-Proton"
 	if !alreadyDownloaded(destDir, key) || forceDownload {
 		removeDownloadedFiles(destDir, key)
 		var path string
-		path, err := DownloadURL(ctx, GEProtonUrl, destDir, progressCb)
+		path, err := DownloadURL(GEProtonUrl, destDir, progressCb)
 		if err != nil {
 			return fmt.Errorf("Ошибка загрузки GE-Proton повторите попытку позже %s", err)
 		}
@@ -513,14 +520,14 @@ func DownloadGEProton(ctx context.Context, gameRoot string, forceDownload bool, 
 	return nil
 }
 
-func DownloadCommunityShaders(ctx context.Context, gameRoot string, forceDownload bool, progressCb func(float64, float64, string)) error {
+func DownloadCommunityShaders(gameRoot string, forceDownload bool, progressCb func(float64, float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	key1 := "Community"
 	key2 := "Upscal"
 	if !alreadyDownloaded(destDir, key1) || forceDownload {
 		removeDownloadedFiles(destDir, key1)
 		var path string
-		path, err := DownloadURL(ctx, CommunityShaderURL, destDir, progressCb)
+		path, err := DownloadURL(CommunityShaderURL, destDir, progressCb)
 		if err != nil {
 			return fmt.Errorf("ошибка получения префикса wine попробуйте использовать google drive %s", err)
 		}
@@ -529,7 +536,7 @@ func DownloadCommunityShaders(ctx context.Context, gameRoot string, forceDownloa
 	if !alreadyDownloaded(destDir, key2) || forceDownload {
 		removeDownloadedFiles(destDir, key2)
 		var path string
-		path, err := DownloadURL(ctx, CommunityShaderUpsacleURL, destDir, progressCb)
+		path, err := DownloadURL(CommunityShaderUpsacleURL, destDir, progressCb)
 		if err != nil {
 			return fmt.Errorf("ошибка получения префикса wine попробуйте использовать google drive %s", err)
 		}

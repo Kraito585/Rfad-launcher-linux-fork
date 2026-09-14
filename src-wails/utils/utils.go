@@ -5,7 +5,6 @@ import (
 	"archive/zip"
 	"bufio"
 	"compress/gzip"
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -16,10 +15,12 @@ import (
 	"github.com/bodgit/sevenzip"
 )
 
-func ExtractArchive(ctx context.Context, archivePath, destDir string, progressCb func(float64, string)) error {
+const systemConfigPath = "~/.config/rfad-launcher/launcher.conf"
+
+func ExtractArchive(archivePath, destDir string, progressCb func(float64, string)) error {
 	switch {
 	case strings.HasSuffix(archivePath, ".tar.gz"):
-		return extractTarGz(ctx, archivePath, destDir, progressCb)
+		return extractTarGz(archivePath, destDir, progressCb)
 	case strings.HasSuffix(archivePath, ".7z"):
 		return extract7z(archivePath, destDir, progressCb)
 	case strings.HasSuffix(archivePath, ".zip"):
@@ -53,9 +54,26 @@ func GetDownloadedPath(destDir, key string) (string, error) {
 	return "", scanner.Err()
 }
 
-func GetOneSetting(destDir, key string) (string, error) {
-	statusFile := filepath.Join(destDir, "launcher_config.txt")
-	f, err := os.Open(statusFile)
+// expandHome заменяет ведущую тильду (~) на реальный путь к домашней директории пользователя
+func expandHome(path string) (string, error) {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, path[2:]), nil
+	}
+	return path, nil
+}
+
+// GetOneSetting считывает конкретный ключ из центрального файла конфигурации
+func GetOneSetting(key string) (string, error) {
+	configPath, err := expandHome(systemConfigPath)
+	if err != nil {
+		return "", err
+	}
+
+	f, err := os.Open(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", nil
@@ -69,8 +87,8 @@ func GetOneSetting(destDir, key string) (string, error) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, prefix) {
-			path := strings.TrimPrefix(line, prefix)
-			return path, nil
+			val := strings.TrimPrefix(line, prefix)
+			return val, nil
 		}
 	}
 	return "", scanner.Err()
@@ -78,23 +96,30 @@ func GetOneSetting(destDir, key string) (string, error) {
 
 // SetOneSetting принимает value любого типа (interface{}),
 // конвертирует его в строку и перезаписывает значение в конфиге.
-func SetOneSetting(destDir, key string, value interface{}) error {
-	statusFile := filepath.Join(destDir, "launcher_config.txt")
-	prefix := key + " "
+func SetOneSetting(key string, value interface{}) error {
+	configPath, err := expandHome(systemConfigPath)
+	if err != nil {
+		return err
+	}
 
-	// Конвертируем interface{} в строку
+	// Убеждаемся, что директория ~/.config/rfad-launcher существует
+	dir := filepath.Dir(configPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("ошибка создания директории конфига: %w", err)
+	}
+
+	prefix := key + " "
 	strValue := fmt.Sprintf("%v", value)
 
 	var lines []string
 	keyFound := false
 
 	// Читаем исходный файл, если он существует
-	f, err := os.Open(statusFile)
+	f, err := os.Open(configPath)
 	if err == nil {
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
 			line := scanner.Text()
-			// Если находим нужный ключ, заменяем всю строку на новое значение
 			if strings.HasPrefix(line, prefix) {
 				lines = append(lines, prefix+strValue)
 				keyFound = true
@@ -102,7 +127,6 @@ func SetOneSetting(destDir, key string, value interface{}) error {
 				lines = append(lines, line)
 			}
 		}
-
 		f.Close()
 
 		if err := scanner.Err(); err != nil {
@@ -119,7 +143,7 @@ func SetOneSetting(destDir, key string, value interface{}) error {
 
 	// Перезаписываем файл
 	output := strings.Join(lines, "\n") + "\n"
-	err = os.WriteFile(statusFile, []byte(output), 0644)
+	err = os.WriteFile(configPath, []byte(output), 0644)
 	if err != nil {
 		return fmt.Errorf("ошибка записи файла: %w", err)
 	}
@@ -127,7 +151,86 @@ func SetOneSetting(destDir, key string, value interface{}) error {
 	return nil
 }
 
-func extractTarGz(ctx context.Context, archivePath, targetDir string, progressCb func(float64, string)) error {
+type LauncherConfig struct {
+	LinuxPatchComplete bool   `json:"linuxPatchComplete"`
+	MangoHud           bool   `json:"mangoHud"`
+	FSR                bool   `json:"fsr"`
+	ShaderCache        bool   `json:"shaderCache"`
+	HDR                bool   `json:"hdr"`
+	SteamFix           bool   `json:"steamFix"`
+	FpsLimit           string `json:"fpsLimit"`
+	WineDllOverrides   string `json:"wineDllOverrides"`
+	GrafikMod          string `json:"grafikMod"`
+	FsrLvl             string `json:"fsrLvl"`
+}
+
+func parseBool(val string) bool {
+	return strings.ToLower(val) == "true"
+}
+
+func GetLauncherConfig() (*LauncherConfig, error) {
+	configPath, err := expandHome(systemConfigPath)
+	if err != nil {
+		return &LauncherConfig{}, err
+	}
+
+	file, err := os.Open(configPath)
+	if err != nil {
+		return &LauncherConfig{}, err
+	}
+	defer file.Close()
+
+	cfg := &LauncherConfig{}
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		// ИСПРАВЛЕНИЕ: Теперь разделяем по ПЕРВОМУ ПРОБЕЛУ, а не по двоеточию
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		val = strings.Trim(val, `"'`)
+
+		switch key {
+		case "linux-patch-complite":
+			cfg.LinuxPatchComplete = parseBool(val)
+		case "MangoHud":
+			cfg.MangoHud = parseBool(val)
+		case "FSR":
+			cfg.FSR = parseBool(val)
+		case "ShaderCache":
+			cfg.ShaderCache = parseBool(val)
+		case "HDR":
+			cfg.HDR = parseBool(val)
+		case "SteamFix":
+			cfg.SteamFix = parseBool(val)
+		case "FpsLimit":
+			cfg.FpsLimit = val
+		case "WineDllOverrides":
+			cfg.WineDllOverrides = val
+		case "GrafikMod":
+			cfg.GrafikMod = val
+		case "FsrLvl":
+			cfg.FsrLvl = val
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return cfg, err
+	}
+
+	return cfg, nil
+}
+
+func extractTarGz(archivePath, targetDir string, progressCb func(float64, string)) error {
 	fmt.Printf("Открытие tar.gz архива: %s\n", archivePath)
 	f, err := os.Open(archivePath)
 	if err != nil {
@@ -167,11 +270,6 @@ func extractTarGz(ctx context.Context, archivePath, targetDir string, progressCb
 
 	var currentIndex int
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
 
 		header, err := tr.Next()
 		if err == io.EOF {
@@ -357,45 +455,6 @@ func sanitize(s string) string {
 	return reg.ReplaceAllString(s, "")
 }
 
-func UpdateLauncherConfig(gameRoot, key string, value string) error {
-	configFile := filepath.Join(gameRoot, "launcher_config.txt")
-	newLine := fmt.Sprintf("%s: %s", key, value)
-
-	var lines []string
-	if file, err := os.Open(configFile); err == nil {
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			lines = append(lines, scanner.Text())
-		}
-		file.Close()
-	}
-
-	keyFound := false
-	for i, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), key+":") {
-			lines[i] = newLine
-			keyFound = true
-			break
-		}
-	}
-
-	if !keyFound {
-		lines = append(lines, newLine)
-	}
-
-	file, err := os.Create(configFile)
-	if err != nil {
-		return fmt.Errorf("не удалось открыть файл конфигурации для записи: %w", err)
-	}
-	defer file.Close()
-
-	writer := bufio.NewWriter(file)
-	for _, line := range lines {
-		fmt.Fprintln(writer, line)
-	}
-	return writer.Flush()
-}
-
 func CopyPath(src, dst string) error {
 	info, err := os.Stat(src)
 	if err != nil {
@@ -409,6 +468,10 @@ func CopyPath(src, dst string) error {
 
 // copyFile безопасно копирует один файл
 func CopyFile(src, dst string) error {
+	if err := os.Link(src, dst); err == nil {
+		return nil
+	}
+
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -425,10 +488,14 @@ func CopyFile(src, dst string) error {
 		return err
 	}
 
-	info, err := os.Stat(src)
-	if err == nil {
+	if err := out.Sync(); err != nil {
+		return err
+	}
+
+	if info, err := os.Stat(src); err == nil {
 		os.Chmod(dst, info.Mode())
 	}
+
 	return nil
 }
 
@@ -436,16 +503,16 @@ func CopyFile(src, dst string) error {
 func CopyDir(src, dst string) error {
 	info, err := os.Stat(src)
 	if err != nil {
-		return err
+		return fmt.Errorf("ошибка получения инфо о папке %s: %w", src, err)
 	}
 
 	if err := os.MkdirAll(dst, info.Mode()); err != nil {
-		return err
+		return fmt.Errorf("ошибка создания папки %s: %w", dst, err)
 	}
 
 	entries, err := os.ReadDir(src)
 	if err != nil {
-		return err
+		return fmt.Errorf("ошибка чтения папки %s: %w", src, err)
 	}
 
 	for _, entry := range entries {
@@ -457,8 +524,9 @@ func CopyDir(src, dst string) error {
 				return err
 			}
 		} else {
+			// Наша новая CopyFile сама разберется, как копировать файл быстрее всего
 			if err := CopyFile(srcPath, dstPath); err != nil {
-				return err
+				return fmt.Errorf("ошибка копирования файла %s в %s: %w", srcPath, dstPath, err)
 			}
 		}
 	}
