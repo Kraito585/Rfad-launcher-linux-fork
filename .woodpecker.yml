@@ -7,7 +7,7 @@ steps:
     commands:
       - apt-get update && apt-get install -y docker.io build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
       - go install github.com/wailsapp/wails/v3/cmd/wails3@latest
-
+      - sed -i 's/curl /curl -4 /g' build/docker/Dockerfile.cross
       - DOCKER_BUILDKIT=1 wails3 task setup:docker
       - wails3 task linux:package
 
