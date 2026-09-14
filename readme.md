@@ -13,13 +13,14 @@
 
 ## Совместимость
 
-|    x    | AppImage | deb | rpm |
-| :-----: | :------: | :-: | :-: |
-| Debian  |    \*    |  ✓  |  x  |
-| Garuda  |    ✓     |  x  |  x  |
-| CachyOS |    ✓     |  x  |  x  |
-| Fedora  |    x     |  ✓  |  ✓  |
-| Ubuntu  |    \*    |  ✓  |  ✓  |
+|  **x**  | **AppImage** | **deb** | **rpm** |
+| :-----: | :----------: | :-----: | :-----: |
+| Debian  |      x       |    ✓    |    x    |
+| Garuda  |      ✓       |    x    |    x    |
+| CachyOS |      ✓       |    x    |    x    |
+| Fedora  |      x       |    ✓    |    ✓    |
+| Ubuntu  |      ✓       |    ✓    |    ✓    |
+| SteamOS |      ✓       |    x    |    x    |
 
 ## Частые вопросы:
 
