@@ -1,6 +1,6 @@
 steps:
   build-artifacts:
-    image: golang:1.22-bookworm
+    image: golang:1.26-bookworm
     timeout: 2h
     volumes:
       # Пробрасываем сокет хоста, чтобы wails мог использовать Docker

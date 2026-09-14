@@ -77,7 +77,7 @@ cd Rfad-launcher-linux-fork
 
 ### 1. Подготовка окружения (Wails v3)
 
-Убедитесь, что у вас установлен `Go` (версии 1.22+), `Node.js` (или npm), `Docker` и `Wails` v3 CLI:
+Убедитесь, что у вас установлен `Go` (версии 1.25+), `Node.js` (или npm), `Docker` и `Wails` v3 CLI:
 
 ```
 go install github.com/wailsapp/wails/v3/cmd/wails3@latest
