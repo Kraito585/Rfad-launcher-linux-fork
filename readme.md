@@ -13,14 +13,14 @@
 
 ## Совместимость
 
-|  **x**  | **AppImage** | **deb** | **rpm** |
-| :-----: | :----------: | :-----: | :-----: |
-| Debian  |      x       |    ✓    |    x    |
-| Garuda  |      ✓       |    x    |    x    |
-| CachyOS |      ✓       |    x    |    x    |
-| Fedora  |      x       |    ✓    |    ✓    |
-| Ubuntu  |      ✓       |    ✓    |    ✓    |
-| SteamOS |      ✓       |    x    |    x    |
+|  **x**  | **AppImage** | **deb** | **rpm** | **zst** |
+| :-----: | :----------: | :-----: | :-----: | :-----: |
+| Debian  |      x       |    ✓    |    x    |    x    |
+| Ubuntu  |      ✓       |    ✓    |    x    |    x    |
+| Fedora  |      ✓       |    ✓    |    ✓    |    x    |
+| CachyOS |      ✓       |    x    |    x    |    ✓    |
+| Garuda  |      ✓       |    x    |    x    |    ✓    |
+| SteamOS |      ✓       |    x    |    x    |    x    |
 
 ## Частые вопросы:
 

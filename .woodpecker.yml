@@ -5,108 +5,123 @@ steps:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     commands:
-      - apt-get update && apt-get install -y docker.io build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
+      - apt-get update && apt-get install -y docker.io build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev nodejs npm
+
       - go install github.com/wailsapp/wails/v3/cmd/wails3@latest
       - DOCKER_BUILDKIT=1 wails3 task setup:docker
       - wails3 task linux:package
+
       - |
         if [ ! -f "CHANGELOG.md" ]; then
           echo "$CI_COMMIT_MESSAGE" > CHANGELOG.md
         fi
 
-  # === 2. ЭТАП ТЕСТИРОВАНИЯ ЗАВИСИМОСТЕЙ ===
-  test-cachyos:
+  # ==========================================
+  # === БЛОК 1: ТЕСТИРОВАНИЕ ARCH-LINUX ===
+  # ==========================================
+
+  test-cachyos-zst:
     image: cachyos/cachyos:latest
     commands:
-      # Устанавливаем графические либы, которые и так есть у десктопных пользователей
-      - pacman -Syu --noconfirm libx11 wayland harfbuzz fribidi mesa libdrm fontconfig
-      # Устанавливаем родной пакет ZST
-      - pacman -U --noconfirm bin/RFADLauncherLinux.pkg.tar.zst
-      - |
-        if ldd /usr/bin/RFADLauncherLinux | grep -q "not found"; then
-          echo "КРИТИЧЕСКАЯ ОШИБКА: Отсутствуют зависимости!";
-          ldd /usr/bin/RFADLauncherLinux | grep "not found";
-          exit 1;
-        else
-          echo "Все зависимости CachyOS успешно разрешены!";
-        fi
-    when:
-      - event: [push, pull_request]
-        evaluate: 'not (CI_COMMIT_MESSAGE contains "[skip tests]")'
-
-  test-garuda:
-    image: archlinux:latest # Официального образа Garuda нет, используем Arch как базу
-    commands:
       - pacman -Syu --noconfirm libx11 wayland harfbuzz fribidi mesa libdrm fontconfig
       - pacman -U --noconfirm bin/RFADLauncherLinux.pkg.tar.zst
-      - |
-        if ldd /usr/bin/RFADLauncherLinux | grep -q "not found"; then
-          echo "КРИТИЧЕСКАЯ ОШИБКА: Отсутствуют зависимости!";
-          ldd /usr/bin/RFADLauncherLinux | grep "not found";
-          exit 1;
-        else
-          echo "Все зависимости Garuda/Arch успешно разрешены!";
-        fi
-    when:
+      - ldd /usr/bin/RFADLauncherLinux | grep -q "not found" && { ldd /usr/bin/RFADLauncherLinux | grep "not found"; exit 1; } || echo "CachyOS ZST OK!"
+    when: &test_conditions
       - event: [push, pull_request]
         evaluate: 'not (CI_COMMIT_MESSAGE contains "[skip tests]")'
 
-  test-debian:
-    image: debian:12-slim
-    environment:
-      DEBIAN_FRONTEND: noninteractive
+  test-cachyos-appimage:
+    image: cachyos/cachyos:latest
     commands:
-      - apt-get update
-      - apt-get install -y ./bin/RFADLauncherLinux.deb
-      - |
-        if ldd /usr/bin/RFADLauncherLinux | grep -q "not found"; then
-          echo "КРИТИЧЕСКАЯ ОШИБКА: Отсутствуют зависимости!";
-          ldd /usr/bin/RFADLauncherLinux | grep "not found";
-          exit 1;
-        else
-          echo "Все зависимости DEB успешно разрешены!";
-        fi
-    when:
-      - event: [push, pull_request]
-        evaluate: 'not (CI_COMMIT_MESSAGE contains "[skip tests]")'
+      - chmod +x bin/rfadlauncherlinux-x86_64.AppImage
+      - ./bin/rfadlauncherlinux-x86_64.AppImage --appimage-extract
+      - export LD_LIBRARY_PATH=$(pwd)/squashfs-root/usr/lib:$LD_LIBRARY_PATH
+      - ldd squashfs-root/usr/bin/RFADLauncherLinux | grep -q "not found" && { ldd squashfs-root/usr/bin/RFADLauncherLinux | grep "not found"; exit 1; } || echo "CachyOS AppImage OK!"
+    when: *test_conditions
 
-  test-fedora:
-    image: fedora:40
+  test-garuda-zst:
+    image: archlinux:latest # База Garuda
     commands:
-      - dnf install -y ./bin/RFADLauncherLinux.rpm
-      - |
-        if ldd /usr/bin/RFADLauncherLinux | grep -q "not found"; then
-          echo "КРИТИЧЕСКАЯ ОШИБКА: Отсутствуют зависимости!";
-          ldd /usr/bin/RFADLauncherLinux | grep "not found";
-          exit 1;
-        else
-          echo "Все зависимости RPM успешно разрешены!";
-        fi
-    when:
-      - event: [push, pull_request]
-        evaluate: 'not (CI_COMMIT_MESSAGE contains "[skip tests]")'
+      - pacman -Syu --noconfirm libx11 wayland harfbuzz fribidi mesa libdrm fontconfig
+      - pacman -U --noconfirm bin/RFADLauncherLinux.pkg.tar.zst
+      - ldd /usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "Garuda ZST OK!"
+    when: *test_conditions
 
-  test-ubuntu:
+  test-manjaro-zst:
+    image: manjarolinux/base:latest
+    commands:
+      - pacman -Syu --noconfirm libx11 wayland harfbuzz fribidi mesa libdrm fontconfig
+      - pacman -U --noconfirm bin/RFADLauncherLinux.pkg.tar.zst
+      - ldd /usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "Manjaro ZST OK!"
+    when: *test_conditions
+
+  test-steamos-appimage:
+    image: archlinux:latest # SteamOS 3.x основан на Arch, файловая система read-only, поэтому тестируем только AppImage
+    commands:
+      - chmod +x bin/rfadlauncherlinux-x86_64.AppImage
+      - ./bin/rfadlauncherlinux-x86_64.AppImage --appimage-extract
+      - export LD_LIBRARY_PATH=$(pwd)/squashfs-root/usr/lib:$LD_LIBRARY_PATH
+      - ldd squashfs-root/usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "SteamOS AppImage OK!"
+    when: *test_conditions
+
+  # ==========================================
+  # === БЛОК 2: ТЕСТИРОВАНИЕ UBUNTU/DEBIAN ===
+  # ==========================================
+
+  test-ubuntu-deb:
     image: ubuntu:24.04
     environment:
       DEBIAN_FRONTEND: noninteractive
     commands:
-      - apt-get update
-      # Устанавливаем нативный DEB пакет. apt автоматически подтянет X11, Wayland и прочие зависимости.
-      - apt-get install -y ./bin/RFADLauncherLinux.deb
-      - |
-        if ldd /usr/bin/RFADLauncherLinux | grep -q "not found"; then
-          echo "КРИТИЧЕСКАЯ ОШИБКА: Отсутствуют зависимости!";
-          ldd /usr/bin/RFADLauncherLinux | grep "not found";
-          exit 1;
-        else
-          echo "Все зависимости Ubuntu успешно разрешены!";
-        fi
-    when:
-      - event: [push, pull_request]
-        evaluate: 'not (CI_COMMIT_MESSAGE contains "[skip tests]")'
+      - apt-get update && apt-get install -y ./bin/RFADLauncherLinux.deb
+      - ldd /usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "Ubuntu DEB OK!"
+    when: *test_conditions
 
-  # === 3. ЭТАП ПУБЛИКАЦИИ ===
+  test-ubuntu-appimage:
+    image: ubuntu:24.04
+    environment:
+      DEBIAN_FRONTEND: noninteractive
+    commands:
+      - apt-get update && apt-get install -y file
+      - chmod +x bin/rfadlauncherlinux-x86_64.AppImage
+      - ./bin/rfadlauncherlinux-x86_64.AppImage --appimage-extract
+      - export LD_LIBRARY_PATH=$(pwd)/squashfs-root/usr/lib:$LD_LIBRARY_PATH
+      - ldd squashfs-root/usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "Ubuntu AppImage OK!"
+    when: *test_conditions
+
+  test-debian-deb:
+    image: debian:12-slim
+    environment:
+      DEBIAN_FRONTEND: noninteractive
+    commands:
+      - apt-get update && apt-get install -y ./bin/RFADLauncherLinux.deb
+      - ldd /usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "Debian DEB OK!"
+    when: *test_conditions
+
+  # ==========================================
+  # === БЛОК 3: ТЕСТИРОВАНИЕ FEDORA ===
+  # ==========================================
+
+  test-fedora-rpm:
+    image: fedora:40
+    commands:
+      - dnf install -y ./bin/RFADLauncherLinux.rpm
+      - ldd /usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "Fedora RPM OK!"
+    when: *test_conditions
+
+  test-fedora-appimage:
+    image: fedora:40
+    commands:
+      - chmod +x bin/rfadlauncherlinux-x86_64.AppImage
+      - ./bin/rfadlauncherlinux-x86_64.AppImage --appimage-extract
+      - export LD_LIBRARY_PATH=$(pwd)/squashfs-root/usr/lib:$LD_LIBRARY_PATH
+      - ldd squashfs-root/usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "Fedora AppImage OK!"
+    when: *test_conditions
+
+  # ==========================================
+  # === БЛОК 4: ПУБЛИКАЦИЯ ===
+  # ==========================================
+
   publish-github:
     image: woodpeckerci/plugin-release
     settings:
