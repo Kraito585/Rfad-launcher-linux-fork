@@ -118,7 +118,7 @@ steps:
   test-fedora-appimage:
     image: fedora:40
     commands:
-      - dnf install -y file libX11 wayland-client harfbuzz fribidi mesa-libEGL mesa-libGL libdrm fontconfig freetype alsa-lib mesa-libgbm
+      - dnf install -y file libX11 wayland harfbuzz fribidi mesa-libEGL mesa-libGL libdrm fontconfig freetype alsa-lib mesa-libgbm
       - chmod +x bin/rfadlauncherlinux-x86_64.AppImage
       - ./bin/rfadlauncherlinux-x86_64.AppImage --appimage-extract
       - export LD_LIBRARY_PATH=$(pwd)/squashfs-root/usr/lib:$LD_LIBRARY_PATH

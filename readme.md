@@ -21,7 +21,7 @@
 | Manjaro |      ✓       |    x    |    x    |    ✓    |
 | CachyOS |      ✓       |    x    |    x    |    ✓    |
 | Garuda  |      ✓       |    x    |    x    |    ✓    |
-| SteamOS |      ✓       |    x    |    x    |    x    |
+| SteamOS |      ✓       |    x    |    x    |   \*    |
 
 ## Частые вопросы:
 
