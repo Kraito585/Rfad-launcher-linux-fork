@@ -21,21 +21,22 @@ steps:
 
       - echo "--> Создаем пути..."
       - TARGET="squashfs-root/usr/lib/x86_64-linux-gnu/webkitgtk-6.0"
-      - mkdir -p $TARGET
+      - mkdir -p "$TARGET"
 
-      - echo "--> УМНЫЙ ПОИСК - ищем где Debian спрятал процессы WebKit..."
-      - WEBKIT_EXEC=$(find /usr -name "WebKitNetworkProcess" -type f -o -type l | head -n 1)
+      - echo "--> УМНЫЙ ПОИСК - ищем процессы WebKit..."
+      - WEBKIT_EXEC=$(find /usr/libexec /usr/lib -name "WebKitNetworkProcess" -type f 2>/dev/null | grep "webkitgtk-6.0" | head -n 1)
+      - if [ -z "$WEBKIT_EXEC" ]; then echo "КРИТИЧЕСКАЯ ОШИБКА WebKit не найден!"; exit 1; fi
       - WEBKIT_DIR=$(dirname "$WEBKIT_EXEC")
       - echo "Нашли исполняемые файлы WebKit в папке -> $WEBKIT_DIR"
 
       - echo "--> Копируем исполняемые процессы..."
-      - cp -v $WEBKIT_DIR/* $TARGET/
+      - cp -v "$WEBKIT_DIR"/* "$TARGET/"
 
       - echo "--> Копируем injected-bundle..."
-      - cp -v /usr/lib/x86_64-linux-gnu/webkitgtk-6.0/* $TARGET/ 2>/dev/null || true
+      - cp -v /usr/lib/x86_64-linux-gnu/webkitgtk-6.0/* "$TARGET/" 2>/dev/null || true
 
       - echo "--> Проверяем результат копирования..."
-      - ls -lh $TARGET/
+      - ls -lh "$TARGET/"
 
       - echo "--> Распаковываем сам appimagetool..."
       - curl -fSL -o appimagetool.AppImage https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
