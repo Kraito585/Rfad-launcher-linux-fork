@@ -5,7 +5,10 @@ steps:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     commands:
-      - apt-get update && apt-get install -y docker.io build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev nodejs npm
+      - apt-get update && apt-get install -y curl docker.io build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
+
+      - curl -fsSL https://deb.nodesource.com/setup_26.x | bash -
+      - apt-get install -y nodejs
 
       - go install github.com/wailsapp/wails/v3/cmd/wails3@latest
       - DOCKER_BUILDKIT=1 wails3 task setup:docker
@@ -15,7 +18,6 @@ steps:
         if [ ! -f "CHANGELOG.md" ]; then
           echo "$CI_COMMIT_MESSAGE" > CHANGELOG.md
         fi
-
   # ==========================================
   # === БЛОК 1: ТЕСТИРОВАНИЕ ARCH-LINUX ===
   # ==========================================
