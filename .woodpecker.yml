@@ -36,6 +36,7 @@ steps:
   test-cachyos-appimage:
     image: cachyos/cachyos:latest
     commands:
+      - pacman -Syu --noconfirm libx11 wayland harfbuzz fribidi mesa libdrm fontconfig freetype2 alsa-lib
       - chmod +x bin/rfadlauncherlinux-x86_64.AppImage
       - ./bin/rfadlauncherlinux-x86_64.AppImage --appimage-extract
       - export LD_LIBRARY_PATH=$(pwd)/squashfs-root/usr/lib:$LD_LIBRARY_PATH
@@ -61,6 +62,7 @@ steps:
   test-steamos-appimage:
     image: archlinux:latest # SteamOS 3.x основан на Arch, файловая система read-only, поэтому тестируем только AppImage
     commands:
+      - pacman -Syu --noconfirm libx11 wayland harfbuzz fribidi mesa libdrm fontconfig freetype2 alsa-lib
       - chmod +x bin/rfadlauncherlinux-x86_64.AppImage
       - ./bin/rfadlauncherlinux-x86_64.AppImage --appimage-extract
       - export LD_LIBRARY_PATH=$(pwd)/squashfs-root/usr/lib:$LD_LIBRARY_PATH
@@ -85,6 +87,7 @@ steps:
     environment:
       DEBIAN_FRONTEND: noninteractive
     commands:
+      - apt-get update && apt-get install -y file libx11-6 libwayland-client0 libharfbuzz0b libfribidi0 libegl1 libgl1 libdrm2 libfontconfig1 libfreetype6 libasound2t64 libgbm1
       - apt-get update && apt-get install -y file
       - chmod +x bin/rfadlauncherlinux-x86_64.AppImage
       - ./bin/rfadlauncherlinux-x86_64.AppImage --appimage-extract
@@ -115,6 +118,7 @@ steps:
   test-fedora-appimage:
     image: fedora:40
     commands:
+      - dnf install -y file libX11 wayland-client harfbuzz fribidi mesa-libEGL mesa-libGL libdrm fontconfig freetype alsa-lib mesa-libgbm
       - chmod +x bin/rfadlauncherlinux-x86_64.AppImage
       - ./bin/rfadlauncherlinux-x86_64.AppImage --appimage-extract
       - export LD_LIBRARY_PATH=$(pwd)/squashfs-root/usr/lib:$LD_LIBRARY_PATH
