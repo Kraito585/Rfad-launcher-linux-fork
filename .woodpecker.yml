@@ -19,8 +19,11 @@ steps:
       - cd bin
       - ./rfadlauncherlinux-x86_64.AppImage --appimage-extract
 
+      # СПАСАЕМ ПАПКУ ПРИЛОЖЕНИЯ ОТ ПЕРЕЗАПИСИ
+      - mv squashfs-root app-root
+
       - echo "--> Создаем пути..."
-      - TARGET="squashfs-root/usr/lib/x86_64-linux-gnu/webkitgtk-6.0"
+      - TARGET="app-root/usr/lib/x86_64-linux-gnu/webkitgtk-6.0"
       - mkdir -p "$TARGET"
 
       - echo "--> УМНЫЙ ПОИСК - ищем процессы WebKit..."
@@ -29,7 +32,6 @@ steps:
       - WEBKIT_DIR=$(dirname "$WEBKIT_EXEC")
       - echo "Нашли исполняемые файлы WebKit в папке -> $WEBKIT_DIR"
 
-      # ДОБАВЛЕН ФЛАГ -r ДЛЯ КОПИРОВАНИЯ ДИРЕКТОРИЙ
       - echo "--> Копируем исполняемые процессы и папки..."
       - cp -rv "$WEBKIT_DIR"/* "$TARGET/"
 
@@ -42,6 +44,8 @@ steps:
       - echo "--> Распаковываем сам appimagetool..."
       - curl -fSL -o appimagetool.AppImage https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
       - chmod +x appimagetool.AppImage
+
+      # Распаковщик создаст свою собственную squashfs-root
       - ./appimagetool.AppImage --appimage-extract
       - mv squashfs-root tool-root
 
@@ -49,7 +53,8 @@ steps:
       - rm rfadlauncherlinux-x86_64.AppImage
 
       - echo "--> Собираем новый AppImage..."
-      - ARCH=x86_64 ./tool-root/AppRun ./squashfs-root rfadlauncherlinux-x86_64.AppImage
+      # Собираем из app-root!
+      - ARCH=x86_64 ./tool-root/AppRun ./app-root rfadlauncherlinux-x86_64.AppImage
 
       - echo "--> Готово! Финальный размер"
       - ls -lh rfadlauncherlinux-x86_64.AppImage

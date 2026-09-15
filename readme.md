@@ -17,7 +17,7 @@
 | :-----: | :----------: | :-----: | :-----: | :-----: |
 | Debian  |      x       |    ✓    |    x    |    x    |
 | Ubuntu  |      ✓       |    ✓    |    x    |    x    |
-| Fedora  |      ✓       |    ✓    |    ✓    |    x    |
+| Fedora  |      ✓       |    x    |    ✓    |    x    |
 | Manjaro |      ✓       |    x    |    x    |    ✓    |
 | CachyOS |      ✓       |    x    |    x    |    ✓    |
 | Garuda  |      ✓       |    x    |    x    |    ✓    |
