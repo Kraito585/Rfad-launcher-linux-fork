@@ -5,7 +5,7 @@ steps:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     commands:
-      - apt-get update && apt-get install -y curl docker.io build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
+      - apt-get update && apt-get install -y curl docker.io build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev file
 
       # Устанавливаем Node.js 26.x
       - curl -fsSL https://deb.nodesource.com/setup_26.x | bash -
