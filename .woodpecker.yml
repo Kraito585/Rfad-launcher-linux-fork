@@ -19,13 +19,17 @@ steps:
       - cd bin
       - ./rfadlauncherlinux-x86_64.AppImage --appimage-extract
 
-      # 1. Копируем недостающие исполняемые файлы WebKit внутрь AppImage
-      - mkdir -p squashfs-root/usr/lib/x86_64-linux-gnu/webkitgtk-6.0
-      - cp -r /usr/lib/x86_64-linux-gnu/webkitgtk-6.0/* squashfs-root/usr/lib/x86_64-linux-gnu/webkitgtk-6.0/
+      # Создаем папку, куда смотрит ваш os.Setenv в main.go
+      - TARGET="squashfs-root/usr/lib/x86_64-linux-gnu/webkitgtk-6.0"
+      - mkdir -p $TARGET
 
-      # ВАЖНО: Мы удалили sed. Путь установит сам Go через main.go!
+      # 1. Забираем исполняемые процессы (NetworkProcess, WebProcess) из Debian libexec
+      - cp -a /usr/libexec/webkitgtk-6.0/* $TARGET/ 2>/dev/null || true
 
-      # 2. Скачиваем упаковщик и пересобираем чистый AppImage
+      # 2. Забираем плагин Injected Bundle из Debian lib
+      - cp -a /usr/lib/x86_64-linux-gnu/webkitgtk-6.0/* $TARGET/ 2>/dev/null || true
+
+      # Пересобираем AppImage
       - curl -fSL -o appimagetool-x86_64.AppImage https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
       - chmod +x appimagetool-x86_64.AppImage
       - rm rfadlauncherlinux-x86_64.AppImage
