@@ -23,14 +23,21 @@ steps:
       - TARGET="squashfs-root/usr/lib/x86_64-linux-gnu/webkitgtk-6.0"
       - mkdir -p $TARGET
 
-      - echo "--> Копируем исполняемые процессы WebKit6..."
-      - cp -v /usr/libexec/webkitgtk-6.0/* $TARGET/
-      - cp -v /usr/lib/x86_64-linux-gnu/webkitgtk-6.0/* $TARGET/ || true
+      - echo "--> УМНЫЙ ПОИСК: Ищем, где Debian спрятал процессы WebKit..."
+      - WEBKIT_EXEC=$(find /usr -name "WebKitNetworkProcess" -type f -o -type l | head -n 1)
+      - WEBKIT_DIR=$(dirname "$WEBKIT_EXEC")
+      - echo "Нашли исполняемые файлы WebKit в папке -> $WEBKIT_DIR"
 
-      - echo "--> Проверяем наличие файлов (должны быть WebKitNetworkProcess и WebKitWebProcess):"
+      - echo "--> Копируем исполняемые процессы..."
+      - cp -v $WEBKIT_DIR/* $TARGET/
+
+      - echo "--> Копируем injected-bundle (если он лежит отдельно)..."
+      - cp -v /usr/lib/x86_64-linux-gnu/webkitgtk-6.0/* $TARGET/ 2>/dev/null || true
+
+      - echo "--> Проверяем результат копирования (должны быть WebKitNetworkProcess и WebKitWebProcess):"
       - ls -lh $TARGET/
 
-      - echo "--> Распаковываем сам appimagetool (обход ошибки FUSE в Docker)..."
+      - echo "--> Распаковываем сам appimagetool..."
       - curl -fSL -o appimagetool.AppImage https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
       - chmod +x appimagetool.AppImage
       - ./appimagetool.AppImage --appimage-extract
