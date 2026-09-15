@@ -23,7 +23,7 @@ steps:
       - TARGET="squashfs-root/usr/lib/x86_64-linux-gnu/webkitgtk-6.0"
       - mkdir -p $TARGET
 
-      - echo "--> УМНЫЙ ПОИСК: Ищем, где Debian спрятал процессы WebKit..."
+      - echo "--> УМНЫЙ ПОИСК - ищем где Debian спрятал процессы WebKit..."
       - WEBKIT_EXEC=$(find /usr -name "WebKitNetworkProcess" -type f -o -type l | head -n 1)
       - WEBKIT_DIR=$(dirname "$WEBKIT_EXEC")
       - echo "Нашли исполняемые файлы WebKit в папке -> $WEBKIT_DIR"
@@ -31,10 +31,10 @@ steps:
       - echo "--> Копируем исполняемые процессы..."
       - cp -v $WEBKIT_DIR/* $TARGET/
 
-      - echo "--> Копируем injected-bundle (если он лежит отдельно)..."
+      - echo "--> Копируем injected-bundle..."
       - cp -v /usr/lib/x86_64-linux-gnu/webkitgtk-6.0/* $TARGET/ 2>/dev/null || true
 
-      - echo "--> Проверяем результат копирования (должны быть WebKitNetworkProcess и WebKitWebProcess):"
+      - echo "--> Проверяем результат копирования..."
       - ls -lh $TARGET/
 
       - echo "--> Распаковываем сам appimagetool..."
@@ -43,13 +43,13 @@ steps:
       - ./appimagetool.AppImage --appimage-extract
       - mv squashfs-root tool-root
 
-      - echo "--> Удаляем старый (сломанный) билд..."
+      - echo "--> Удаляем старый сломанный билд..."
       - rm rfadlauncherlinux-x86_64.AppImage
 
       - echo "--> Собираем новый AppImage..."
       - ARCH=x86_64 ./tool-root/AppRun ./squashfs-root rfadlauncherlinux-x86_64.AppImage
 
-      - echo "--> Готово! Финальный размер:"
+      - echo "--> Готово! Финальный размер"
       - ls -lh rfadlauncherlinux-x86_64.AppImage
       - cd ..
       # === КОНЕЦ ИНЪЕКЦИИ ===
@@ -60,6 +60,7 @@ steps:
         if [ ! -f "CHANGELOG.md" ]; then
           echo "$CI_COMMIT_MESSAGE" > CHANGELOG.md
         fi
+
   # ==========================================
   # === БЛОК 1: ТЕСТИРОВАНИЕ ARCH-LINUX ===
   # ==========================================
