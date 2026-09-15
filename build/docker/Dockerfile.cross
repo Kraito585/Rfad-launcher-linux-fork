@@ -243,9 +243,6 @@ echo "Built: bin/${APP}-${GOOS}-${GOARCH}${EXT}"
 SCRIPT
 RUN chmod +x /usr/local/bin/build.sh
 
-RUN ln -s /usr/lib/x86_64-linux-gnu/gtk-4.0 /usr/lib/gtk-4.0 || true
-RUN cp -r /usr/lib/x86_64-linux-gnu/gtk-4.0 /usr/lib/gtk-4.0 || true
-
 WORKDIR /app
 ENTRYPOINT ["/usr/local/bin/build.sh"]
 CMD ["darwin", "arm64"]
