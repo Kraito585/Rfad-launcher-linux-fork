@@ -29,11 +29,12 @@ steps:
       - WEBKIT_DIR=$(dirname "$WEBKIT_EXEC")
       - echo "Нашли исполняемые файлы WebKit в папке -> $WEBKIT_DIR"
 
-      - echo "--> Копируем исполняемые процессы..."
-      - cp -v "$WEBKIT_DIR"/* "$TARGET/"
+      # ДОБАВЛЕН ФЛАГ -r ДЛЯ КОПИРОВАНИЯ ДИРЕКТОРИЙ
+      - echo "--> Копируем исполняемые процессы и папки..."
+      - cp -rv "$WEBKIT_DIR"/* "$TARGET/"
 
-      - echo "--> Копируем injected-bundle..."
-      - cp -v /usr/lib/x86_64-linux-gnu/webkitgtk-6.0/* "$TARGET/" 2>/dev/null || true
+      - echo "--> Копируем резервные файлы..."
+      - cp -rv /usr/lib/x86_64-linux-gnu/webkitgtk-6.0/* "$TARGET/" 2>/dev/null || true
 
       - echo "--> Проверяем результат копирования..."
       - ls -lh "$TARGET/"
