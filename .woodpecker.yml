@@ -14,29 +14,38 @@ steps:
       - DOCKER_BUILDKIT=1 wails3 task setup:docker
       - wails3 task linux:package
 
-      # === ФИКС WEBKIT ДЛЯ APPIMAGE ===
-      - echo "Вшиваем процессы WebKit напрямую в AppImage..."
+      # === НАЧАЛО ЖЕСТКОЙ ИНЪЕКЦИИ WEBKIT6 ===
+      - echo "--> Подготавливаем AppImage..."
       - cd bin
       - ./rfadlauncherlinux-x86_64.AppImage --appimage-extract
 
-      # Создаем папку, куда смотрит ваш os.Setenv в main.go
+      - echo "--> Создаем пути..."
       - TARGET="squashfs-root/usr/lib/x86_64-linux-gnu/webkitgtk-6.0"
       - mkdir -p $TARGET
 
-      # 1. Забираем исполняемые процессы (NetworkProcess, WebProcess) из Debian libexec
-      - cp -a /usr/libexec/webkitgtk-6.0/* $TARGET/ 2>/dev/null || true
+      - echo "--> Копируем исполняемые процессы WebKit6..."
+      - cp -v /usr/libexec/webkitgtk-6.0/* $TARGET/
+      - cp -v /usr/lib/x86_64-linux-gnu/webkitgtk-6.0/* $TARGET/ || true
 
-      # 2. Забираем плагин Injected Bundle из Debian lib
-      - cp -a /usr/lib/x86_64-linux-gnu/webkitgtk-6.0/* $TARGET/ 2>/dev/null || true
+      - echo "--> Проверяем наличие файлов (должны быть WebKitNetworkProcess и WebKitWebProcess):"
+      - ls -lh $TARGET/
 
-      # Пересобираем AppImage
-      - curl -fSL -o appimagetool-x86_64.AppImage https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-      - chmod +x appimagetool-x86_64.AppImage
+      - echo "--> Распаковываем сам appimagetool (обход ошибки FUSE в Docker)..."
+      - curl -fSL -o appimagetool.AppImage https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+      - chmod +x appimagetool.AppImage
+      - ./appimagetool.AppImage --appimage-extract
+      - mv squashfs-root tool-root
+
+      - echo "--> Удаляем старый (сломанный) билд..."
       - rm rfadlauncherlinux-x86_64.AppImage
-      - ARCH=x86_64 ./appimagetool-x86_64.AppImage --appimage-extract-and-run squashfs-root rfadlauncherlinux-x86_64.AppImage
-      - rm -rf squashfs-root appimagetool-x86_64.AppImage
+
+      - echo "--> Собираем новый AppImage..."
+      - ARCH=x86_64 ./tool-root/AppRun ./squashfs-root rfadlauncherlinux-x86_64.AppImage
+
+      - echo "--> Готово! Финальный размер:"
+      - ls -lh rfadlauncherlinux-x86_64.AppImage
       - cd ..
-      # ================================
+      # === КОНЕЦ ИНЪЕКЦИИ ===
 
       - cp -r bin/* /export/
 
