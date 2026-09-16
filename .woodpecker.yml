@@ -3,41 +3,23 @@ steps:
     image: golang:1.26-trixie
     timeout: 2h
     environment:
-      # Позволяет AppImage запускаться внутри Docker-контейнера Woodpecker
+      # Критически важно для работы AppImage-утилит (linuxdeploy) внутри Docker
       APPIMAGE_EXTRACT_AND_RUN: "1"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - /opt/rfad-artifacts:/export
     commands:
-      # Ставим библиотеки для ОБОИХ стеков: GTK3 (для AppImage) и GTK4 (для нативных пакетов)
-      - apt-get update && apt-get install -y curl docker.io build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libgtk-4-dev libwebkitgtk-6.0-dev file
+      # 1. Ставим ТОЛЬКО библиотеки GTK3. Если компилятор попытается найти GTK4, он упадет с ошибкой!
+      - apt-get update && apt-get install -y curl build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev file
       - curl -fsSL https://deb.nodesource.com/setup_26.x | bash -
       - apt-get install -y nodejs
 
       - go install github.com/wailsapp/wails/v3/cmd/wails3@latest
-      - DOCKER_BUILDKIT=1 wails3 task setup:docker
 
-      # 1. Форсируем GTK3 для любых внутренних вызовов "go build"
+      # 2. Форсируем GTK3 для компилятора Go
       - export GOFLAGS="-tags=gtk3"
 
-      # 2. Собираем идеальный AppImage (без --docker, так как мы уже в Linux!)
-      - wails3 task linux:create:appimage
-
-      # 3. Прячем его в безопасную папку
-      - mkdir -p /tmp/safe_backup
-      - mv bin/*.AppImage /tmp/safe_backup/
-
-      # 4. Отключаем GTK3, чтобы вернуть современный стек GTK4
-      - unset GOFLAGS
-
-      # 5. Собираем DEB, RPM и ZST (и сломанный AppImage, который сгенерируется прицепом)
+      # 3. Собираем пакеты НАПРЯМУЮ в Woodpecker-агенте! НИКАКОГО --docker!
       - wails3 task linux:package
-
-      # 6. Удаляем сломанный AppImage (GTK4)
-      - rm -f bin/*.AppImage
-
-      # 7. Возвращаем рабочий GTK3 AppImage из сейфа обратно в bin/
-      - mv /tmp/safe_backup/*.AppImage bin/
 
       - cp -r bin/* /export/
 
