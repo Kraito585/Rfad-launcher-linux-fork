@@ -18,8 +18,10 @@ var appIcon []byte
 var version = "dev"
 
 func init() {
-	os.Setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
-	os.Setenv("GDK_BACKEND", "x11")
+    os.Setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
+    os.Setenv("GDK_BACKEND", "x11")
+    
+    os.Setenv("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1")
 }
 
 func main() {
