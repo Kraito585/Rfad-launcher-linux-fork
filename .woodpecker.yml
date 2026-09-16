@@ -3,22 +3,25 @@ steps:
     image: golang:1.26-trixie
     timeout: 2h
     environment:
-      # Критически важно для работы AppImage-утилит (linuxdeploy) внутри Docker
+      # Позволяет linuxdeploy работать внутри Docker без ошибок FUSE
       APPIMAGE_EXTRACT_AND_RUN: "1"
     volumes:
       - /opt/rfad-artifacts:/export
     commands:
-      # 1. Ставим ТОЛЬКО библиотеки GTK3. Если компилятор попытается найти GTK4, он упадет с ошибкой!
-      - apt-get update && apt-get install -y curl build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev file
+      # 1. Возвращаем ВСЕ пакеты (и GTK3, и GTK4), чтобы Wails CLI смог установиться
+      - apt-get update && apt-get install -y curl build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libgtk-4-dev libwebkitgtk-6.0-dev file
       - curl -fsSL https://deb.nodesource.com/setup_26.x | bash -
       - apt-get install -y nodejs
 
+      # 2. Устанавливаем Wails CLI (теперь он не упадет)
       - go install github.com/wailsapp/wails/v3/cmd/wails3@latest
 
-      # 2. Форсируем GTK3 для компилятора Go
+      # 3. Бронебойный патч: заставляем внутренние скрипты собирать бинарник на GTK3
+      - find build -type f -name "Taskfile.*" -exec sed -i 's/wails3 build/wails3 build -tags gtk3/g' {} +
+      - find build -type f -name "Taskfile.*" -exec sed -i 's/-tags production/-tags production,gtk3/g' {} +
       - export GOFLAGS="-tags=gtk3"
 
-      # 3. Собираем пакеты НАПРЯМУЮ в Woodpecker-агенте! НИКАКОГО --docker!
+      # 4. Запускаем нативную сборку (Упаковщик сам увидит GTK3 через ldd и всё сделает правильно)
       - wails3 task linux:package
 
       - cp -r bin/* /export/

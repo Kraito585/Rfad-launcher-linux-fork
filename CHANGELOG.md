@@ -13,4 +13,3 @@ Wails3 не умеет билдть `AppImage` под свежие `gtk-4.0` и 
 - Build container был доработан: внедрён fallback официальных зеркал для `zig: https://ziglang.org/download/community-mirrors.txt`.
 - Таблица совместимых с OS пакетов была обновлена.
 - В мануале по ручной сборке проекта добавлена рекомендуемая версия для `NodeJS`.
--
