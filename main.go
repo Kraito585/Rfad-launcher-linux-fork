@@ -4,7 +4,6 @@ import (
 	"embed"
 	"log"
 	"os"
-	"path/filepath"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -25,10 +24,6 @@ func init() {
 }
 
 func main() {
-	if appDir := os.Getenv("APPDIR"); appDir != "" {
-        os.Setenv("WEBKIT_EXEC_PATH", filepath.Join(appDir, "usr", "lib", "x86_64-linux-gnu", "webkitgtk-6.0"))
-    }
-
 	appInstance := NewApp()
 
 	// Автоинтеграция AppImage (если запущено из Загрузок — перенесет себя в ~/Applications и перезапустится)

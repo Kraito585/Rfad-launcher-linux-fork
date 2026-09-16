@@ -6,21 +6,29 @@ steps:
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/rfad-artifacts:/export
     commands:
-      - apt-get update && apt-get install -y curl docker.io build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev file wget
+      # Устанавливаем библиотеки и для GTK3 (AppImage), и для GTK4 (DEB/RPM/ZST)
+      - apt-get update && apt-get install -y curl docker.io build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libgtk-4-dev libwebkitgtk-6.0-dev file
       - curl -fsSL https://deb.nodesource.com/setup_26.x | bash -
       - apt-get install -y nodejs
 
       - go install github.com/wailsapp/wails/v3/cmd/wails3@latest
+      - DOCKER_BUILDKIT=1 wails3 task setup:docker
 
-      # Компилируем нативный бинарник
-      - wails3 task linux:build:native
+      # 1. Собираем ИДЕАЛЬНЫЙ AppImage под GTK3
+      - wails3 task -tags gtk3 linux:create:appimage -- --docker
 
-      # Собираем DEB, RPM, ZST штатным упаковщиком Wails
+      # 2. Прячем его в безопасную папку
+      - mkdir -p /tmp/safe_backup
+      - mv bin/*.AppImage /tmp/safe_backup/
+
+      # 3. Собираем все остальные пакеты (они соберутся под GTK4)
       - wails3 task linux:package
 
+      # 4. Удаляем сломанный AppImage (GTK4), который сгенерировался на предыдущем шаге
       - rm -f bin/*.AppImage
 
-      - ./build_appimage.sh
+      # 5. Возвращаем наш рабочий GTK3 AppImage обратно на его законное место
+      - mv /tmp/safe_backup/*.AppImage bin/
 
       - cp -r bin/* /export/
 
@@ -28,7 +36,6 @@ steps:
         if [ ! -f "CHANGELOG.md" ]; then
           echo "$CI_COMMIT_MESSAGE" > CHANGELOG.md
         fi
-
   # ==========================================
   # === БЛОК 1: ТЕСТИРОВАНИЕ ARCH-LINUX ===
   # ==========================================
