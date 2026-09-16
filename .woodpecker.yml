@@ -6,56 +6,21 @@ steps:
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/rfad-artifacts:/export
     commands:
-      - apt-get update && apt-get install -y curl docker.io build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev file
+      - apt-get update && apt-get install -y curl docker.io build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev file wget
       - curl -fsSL https://deb.nodesource.com/setup_26.x | bash -
       - apt-get install -y nodejs
 
       - go install github.com/wailsapp/wails/v3/cmd/wails3@latest
-      - DOCKER_BUILDKIT=1 wails3 task setup:docker
+
+      # Компилируем нативный бинарник
+      - wails3 task linux:build:native
+
+      # Собираем DEB, RPM, ZST штатным упаковщиком Wails
       - wails3 task linux:package
 
-      # === НАЧАЛО ЖЕСТКОЙ ИНЪЕКЦИИ WEBKIT6 ===
-      - echo "--> Подготавливаем AppImage..."
-      - cd bin
-      - ./rfadlauncherlinux-x86_64.AppImage --appimage-extract
+      - rm -f bin/*.AppImage
 
-      - mv squashfs-root app-root
-
-      - echo "--> Создаем пути..."
-      - TARGET_LIB="app-root/usr/lib/webkitgtk-6.0"
-      - TARGET_ARCH="app-root/usr/lib/x86_64-linux-gnu/webkitgtk-6.0"
-      - mkdir -p "$TARGET_LIB" "$TARGET_ARCH"
-
-      - echo "--> УМНЫЙ ПОИСК - ищем процессы WebKit..."
-      - WEBKIT_EXEC=$(find /usr/libexec /usr/lib -name "WebKitNetworkProcess" -type f 2>/dev/null | grep "webkitgtk-6.0" | head -n 1)
-      - if [ -z "$WEBKIT_EXEC" ]; then echo "КРИТИЧЕСКАЯ ОШИБКА WebKit не найден!"; exit 1; fi
-      - WEBKIT_DIR=$(dirname "$WEBKIT_EXEC")
-      - echo "Нашли исполняемые файлы WebKit в папке -> $WEBKIT_DIR"
-
-      - echo "--> Копируем исполняемые процессы..."
-      - cp -rv "$WEBKIT_DIR"/* "$TARGET_LIB/" || true
-      - cp -rv "$WEBKIT_DIR"/* "$TARGET_ARCH/" || true
-
-      - echo "--> Копируем резервные файлы..."
-      - cp -rv /usr/lib/x86_64-linux-gnu/webkitgtk-6.0/* "$TARGET_LIB/" 2>/dev/null || true
-      - cp -rv /usr/lib/x86_64-linux-gnu/webkitgtk-6.0/* "$TARGET_ARCH/" 2>/dev/null || true
-
-      - echo "--> Распаковываем сам appimagetool..."
-      - curl -fSL -o appimagetool.AppImage https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-      - chmod +x appimagetool.AppImage
-      - ./appimagetool.AppImage --appimage-extract
-      - mv squashfs-root tool-root
-
-      - echo "--> Удаляем старый сломанный билд..."
-      - rm rfadlauncherlinux-x86_64.AppImage
-
-      - echo "--> Собираем новый AppImage..."
-      - ARCH=x86_64 ./tool-root/AppRun ./app-root rfadlauncherlinux-x86_64.AppImage
-
-      - echo "--> Готово! Финальный размер"
-      - ls -lh rfadlauncherlinux-x86_64.AppImage
-      - cd ..
-      # === КОНЕЦ ИНЪЕКЦИИ ===
+      - ./build_appimage.sh
 
       - cp -r bin/* /export/
 
