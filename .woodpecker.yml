@@ -1,7 +1,7 @@
 steps:
   build-artifacts:
     image: golang:1.26-trixie
-    timeout: 2h
+    privileged: true
     volumes:
       - /opt/rfad-artifacts:/export
     commands:
