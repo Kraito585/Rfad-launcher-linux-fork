@@ -22,10 +22,10 @@ func getBaseResolution() (int, int) {
 
 func SyncFSRSettings(gameRoot string, grafikMod string) error {
 	grafikMod = strings.TrimSpace(grafikMod)
-	useFSRStr, _ := utils.GetOneSetting("FSR:")
+	useFSRStr, _ := utils.GetOneSetting("FSR")
 	useFSR := strings.TrimSpace(useFSRStr) == "true"
 
-	fsrLvl, _ := utils.GetOneSetting("FsrLvl:")
+	fsrLvl, _ := utils.GetOneSetting("FsrLvl")
 	fsrLvl = strings.TrimSpace(fsrLvl)
 
 	baseWidth, baseHeight := getBaseResolution()

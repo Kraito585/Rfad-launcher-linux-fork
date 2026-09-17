@@ -82,46 +82,61 @@ func GetOneSetting(key string) (string, error) {
 	}
 	defer f.Close()
 
+	// Очищаем ключ от случайных двоеточий
+	cleanKey := strings.TrimSuffix(key, ":")
+
+	// Готовим два варианта для обратной совместимости при чтении
+	prefixWithColon := cleanKey + ": "
+	prefixWithoutColon := cleanKey + " "
+
 	scanner := bufio.NewScanner(f)
-	prefix := key + " "
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, prefix) {
-			val := strings.TrimPrefix(line, prefix)
-			return val, nil
+
+		// Сначала проверяем новый формат (с двоеточием)
+		if strings.HasPrefix(line, prefixWithColon) {
+			return strings.TrimPrefix(line, prefixWithColon), nil
+		}
+
+		// Fallback: проверяем старый формат (без двоеточия)
+		if strings.HasPrefix(line, prefixWithoutColon) {
+			return strings.TrimPrefix(line, prefixWithoutColon), nil
 		}
 	}
 	return "", scanner.Err()
 }
 
-// SetOneSetting принимает value любого типа (interface{}),
-// конвертирует его в строку и перезаписывает значение в конфиге.
+// SetOneSetting принимает value любого типа, конвертирует в строку и записывает в конфиг
 func SetOneSetting(key string, value interface{}) error {
 	configPath, err := expandHome(systemConfigPath)
 	if err != nil {
 		return err
 	}
 
-	// Убеждаемся, что директория ~/.config/rfad-launcher существует
 	dir := filepath.Dir(configPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("ошибка создания директории конфига: %w", err)
 	}
 
-	prefix := key + " "
+	// Очищаем ключ и формируем идеальный формат для записи
+	cleanKey := strings.TrimSuffix(key, ":")
+	prefixWithColon := cleanKey + ": "
+	prefixWithoutColon := cleanKey + " "
+
 	strValue := fmt.Sprintf("%v", value)
 
 	var lines []string
 	keyFound := false
 
-	// Читаем исходный файл, если он существует
 	f, err := os.Open(configPath)
 	if err == nil {
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
 			line := scanner.Text()
-			if strings.HasPrefix(line, prefix) {
-				lines = append(lines, prefix+strValue)
+
+			// Если нашли ключ в старом или новом формате — перезаписываем его в новом формате
+			if strings.HasPrefix(line, prefixWithColon) || strings.HasPrefix(line, prefixWithoutColon) {
+				lines = append(lines, prefixWithColon+strValue)
 				keyFound = true
 			} else {
 				lines = append(lines, line)
@@ -136,12 +151,11 @@ func SetOneSetting(key string, value interface{}) error {
 		return fmt.Errorf("ошибка открытия файла: %w", err)
 	}
 
-	// Если ключа не было, добавляем его в конец
+	// Если ключа не было, добавляем его в конец строго с двоеточием
 	if !keyFound {
-		lines = append(lines, prefix+strValue)
+		lines = append(lines, prefixWithColon+strValue)
 	}
 
-	// Перезаписываем файл
 	output := strings.Join(lines, "\n") + "\n"
 	err = os.WriteFile(configPath, []byte(output), 0644)
 	if err != nil {
@@ -189,13 +203,15 @@ func GetLauncherConfig() (*LauncherConfig, error) {
 			continue
 		}
 
-		// ИСПРАВЛЕНИЕ: Теперь разделяем по ПЕРВОМУ ПРОБЕЛУ, а не по двоеточию
 		parts := strings.SplitN(line, " ", 2)
 		if len(parts) != 2 {
 			continue
 		}
 
 		key := strings.TrimSpace(parts[0])
+
+		key = strings.TrimSuffix(key, ":")
+
 		val := strings.TrimSpace(parts[1])
 		val = strings.Trim(val, `"'`)
 
@@ -468,7 +484,7 @@ func CopyPath(src, dst string) error {
 
 // copyFile безопасно копирует один файл
 func CopyFile(src, dst string) error {
-	if err := os.Link(src, dst); err == nil {
+	if err := HostHardLink(src, dst); err == nil {
 		return nil
 	}
 

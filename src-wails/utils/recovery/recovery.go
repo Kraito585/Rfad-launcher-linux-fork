@@ -5,8 +5,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"rfad-launcher-linux/src-wails/utils"
 	"strings"
 )
 
@@ -53,8 +53,7 @@ func RecoverPrefix(gameRoot string) error {
 
 	// 4. Выполняем wineboot -u для пересоздания структуры
 	// Заменили CommandContext на обычный Command
-	cmd := exec.Command(wineBin, "wineboot", "-u")
-	cmd.Env = env
+	cmd := utils.NewHostCommand(env, wineBin, "wineboot", "-u")
 
 	// Ждем завершения обновления префикса
 	if err := cmd.Run(); err != nil {
@@ -155,14 +154,9 @@ func ApplyRegistryOverrides(env []string, wineBin string, dlls []string) error {
 
 	for _, dll := range dlls {
 		// Заменили CommandContext на обычный Command
-		cmd := exec.Command(wineBin, "reg", "add",
-			`HKEY_CURRENT_USER\Software\Wine\DllOverrides`,
-			"/v", dll,
-			"/t", "REG_SZ",
-			"/d", "native,builtin",
-			"/f",
-		)
-		cmd.Env = env
+		cmd := utils.NewHostCommand(env, wineBin, "reg", "add", 
+    		`HKEY_CURRENT_USER\Software\Wine\DllOverrides`, 
+			"/v", dll, "/t", "REG_SZ", "/d", "native,builtin", "/f")
 
 		if err := cmd.Run(); err != nil {
 			slog.Warn("Не удалось прописать override в реестр", "dll", dll, "err", err)

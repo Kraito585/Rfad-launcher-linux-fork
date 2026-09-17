@@ -2,34 +2,17 @@ steps:
   build-artifacts:
     image: golang:1.26-trixie
     timeout: 2h
-    environment:
-      # Позволяет linuxdeploy работать внутри Docker без ошибок FUSE
-      APPIMAGE_EXTRACT_AND_RUN: "1"
     volumes:
       - /opt/rfad-artifacts:/export
     commands:
-      # 1. Возвращаем ВСЕ пакеты (и GTK3, и GTK4), чтобы Wails CLI смог установиться
-      - apt-get update && apt-get install -y curl build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libgtk-4-dev libwebkitgtk-6.0-dev file
-      - curl -fsSL https://deb.nodesource.com/setup_26.x | bash -
-      - apt-get install -y nodejs
-
-      # 2. Устанавливаем Wails CLI (теперь он не упадет)
-      - go install github.com/wailsapp/wails/v3/cmd/wails3@latest
-
-      # 3. Бронебойный патч: заставляем внутренние скрипты собирать бинарник на GTK3
-      - find build -type f -name "Taskfile.*" -exec sed -i 's/wails3 build/wails3 build -tags gtk3/g' {} +
-      - find build -type f -name "Taskfile.*" -exec sed -i 's/-tags production/-tags production,gtk3/g' {} +
-      - export GOFLAGS="-tags=gtk3"
-
-      # 4. Запускаем нативную сборку (Упаковщик сам увидит GTK3 через ldd и всё сделает правильно)
-      - wails3 task linux:package
-
+      - chmod +x build_linux.sh
+      - ./build_linux.sh --internal
       - cp -r bin/* /export/
-
       - |
         if [ ! -f "CHANGELOG.md" ]; then
           echo "$CI_COMMIT_MESSAGE" > CHANGELOG.md
         fi
+
   # ==========================================
   # === БЛОК 1: ТЕСТИРОВАНИЕ ARCH-LINUX ===
   # ==========================================
@@ -43,16 +26,6 @@ steps:
     when: &test_conditions
       - event: [push, pull_request]
         evaluate: 'not (CI_COMMIT_MESSAGE contains "[skip tests]")'
-
-  test-cachyos-appimage:
-    image: cachyos/cachyos:latest
-    commands:
-      - pacman -Syu --noconfirm libx11 wayland harfbuzz fribidi mesa libdrm fontconfig freetype2 alsa-lib
-      - chmod +x bin/rfadlauncherlinux-x86_64.AppImage
-      - ./bin/rfadlauncherlinux-x86_64.AppImage --appimage-extract
-      - export LD_LIBRARY_PATH=$(pwd)/squashfs-root/usr/lib:$LD_LIBRARY_PATH
-      - ldd squashfs-root/usr/bin/RFADLauncherLinux | grep -q "not found" && { ldd squashfs-root/usr/bin/RFADLauncherLinux | grep "not found"; exit 1; } || echo "CachyOS AppImage OK!"
-    when: *test_conditions
 
   test-garuda-zst:
     image: archlinux:latest # База Garuda
@@ -70,16 +43,6 @@ steps:
       - ldd /usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "Manjaro ZST OK!"
     when: *test_conditions
 
-  test-steamos-appimage:
-    image: archlinux:latest # SteamOS 3.x основан на Arch, файловая система read-only, поэтому тестируем только AppImage
-    commands:
-      - pacman -Syu --noconfirm libx11 wayland harfbuzz fribidi mesa libdrm fontconfig freetype2 alsa-lib
-      - chmod +x bin/rfadlauncherlinux-x86_64.AppImage
-      - ./bin/rfadlauncherlinux-x86_64.AppImage --appimage-extract
-      - export LD_LIBRARY_PATH=$(pwd)/squashfs-root/usr/lib:$LD_LIBRARY_PATH
-      - ldd squashfs-root/usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "SteamOS AppImage OK!"
-    when: *test_conditions
-
   # ==========================================
   # === БЛОК 2: ТЕСТИРОВАНИЕ UBUNTU/DEBIAN ===
   # ==========================================
@@ -91,19 +54,6 @@ steps:
     commands:
       - apt-get update && apt-get install -y ./bin/RFADLauncherLinux.deb
       - ldd /usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "Ubuntu DEB OK!"
-    when: *test_conditions
-
-  test-ubuntu-appimage:
-    image: ubuntu:24.04
-    environment:
-      DEBIAN_FRONTEND: noninteractive
-    commands:
-      - apt-get update && apt-get install -y file libx11-6 libwayland-client0 libharfbuzz0b libfribidi0 libegl1 libgl1 libdrm2 libfontconfig1 libfreetype6 libasound2t64 libgbm1
-      - apt-get update && apt-get install -y file
-      - chmod +x bin/rfadlauncherlinux-x86_64.AppImage
-      - ./bin/rfadlauncherlinux-x86_64.AppImage --appimage-extract
-      - export LD_LIBRARY_PATH=$(pwd)/squashfs-root/usr/lib:$LD_LIBRARY_PATH
-      - ldd squashfs-root/usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "Ubuntu AppImage OK!"
     when: *test_conditions
 
   test-debian-deb:
@@ -126,16 +76,6 @@ steps:
       - ldd /usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "Fedora RPM OK!"
     when: *test_conditions
 
-  test-fedora-appimage:
-    image: fedora:40
-    commands:
-      - dnf install -y file libX11 wayland harfbuzz fribidi mesa-libEGL mesa-libGL libdrm fontconfig freetype alsa-lib mesa-libgbm
-      - chmod +x bin/rfadlauncherlinux-x86_64.AppImage
-      - ./bin/rfadlauncherlinux-x86_64.AppImage --appimage-extract
-      - export LD_LIBRARY_PATH=$(pwd)/squashfs-root/usr/lib:$LD_LIBRARY_PATH
-      - ldd squashfs-root/usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "Fedora AppImage OK!"
-    when: *test_conditions
-
   # ==========================================
   # === БЛОК 4: ПУБЛИКАЦИЯ ===
   # ==========================================
@@ -147,7 +87,7 @@ steps:
         from_secret: github_token
       files:
         - bin/RFADLauncherLinux
-        - bin/rfadlauncherlinux-x86_64.AppImage
+        - bin/RFADLauncherLinux-x86_64.flatpak
         - bin/RFADLauncherLinux.deb
         - bin/RFADLauncherLinux.rpm
         - bin/RFADLauncherLinux.pkg.tar.zst

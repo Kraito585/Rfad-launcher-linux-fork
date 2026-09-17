@@ -11,3 +11,5 @@ run.test.sh
 RFAD_Launcher-x86_64.AppImage
 .task
 .bindings*
+AppDir
+squashfs-root
