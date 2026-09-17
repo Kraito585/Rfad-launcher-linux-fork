@@ -294,7 +294,7 @@ func (a *App) Update() error {
 
 func (a *App) OpenExplorer() error {
 	slog.Info("OpenExplorer called")
-	cmd := exec.Command("xdg-open", GetGameRoot())
+	cmd := utils.NewHostCommand(nil, "xdg-open", GetGameRoot())
 
 	err := cmd.Start()
 	if err != nil {
@@ -354,9 +354,8 @@ func (a *App) StartGame() error {
 	if err == nil && cfg != nil {
 		// Проверяем условия: включен Wine FSR и это НЕ CommunityShader
 		if cfg.FSR && cfg.GrafikMod != "CommunityShader" {
-			if _, err := exec.LookPath("gamescope"); err != nil {
+			if !utils.HostCommandExists("gamescope") {
 				slog.Warn("Gamescope требуется для FSR, но не найден в системе. Отправляем уведомление в UI.")
-				// Отправляем сигнал во Vue для отображения компонента GamescopeErrorMessage
 				application.Get().Event.Emit("gamescope-missing")
 				enableGamescope = false
 			} else {
@@ -378,7 +377,7 @@ func (a *App) StartGame() error {
 }
 
 func (a *App) GetLauncherVersion() string {
-    return version
+	return version
 }
 
 func (a *App) RunCommand(command string, args []string) (string, error) {
@@ -391,7 +390,7 @@ func (a *App) RunCommand(command string, args []string) (string, error) {
 
 func (a *App) BrowserOpenURL(url string) error {
 	slog.Info("OpenBrowser called", "url", url)
-	err := exec.Command("xdg-open", url).Start()
+	err := utils.NewHostCommand(nil, "xdg-open", url).Start()
 	if err != nil {
 		// Обработка ошибки, если браузер не удалось открыть
 		panic(err)
@@ -611,7 +610,7 @@ func (a *App) IntegrateAppImageAndRelaunch() error {
 	// === Сохраняем иконку ===
 	iconPath := "utilities-terminal" // Фолбэк на стандартную иконку терминала
 	iconDir := filepath.Join(homeDir, ".local", "share", "icons")
-	
+
 	if err := os.MkdirAll(iconDir, 0755); err == nil {
 		targetIcon := filepath.Join(iconDir, "rfad-launcher.png")
 		// Вызываем getIcon() из пакета main
@@ -665,38 +664,6 @@ func (a *App) IntegrateAppImageAndRelaunch() error {
 	return nil
 }
 
-func (a *App) AutoIntegrateAppImage() {
-	appImagePath := os.Getenv("APPIMAGE")
-	
-	// Если это не AppImage (запуск DEB/RPM/go run), просто выходим
-	if appImagePath == "" {
-		return
-	}
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		slog.Error("AutoIntegrate: не удалось получить домашнюю директорию", "error", err)
-		return
-	}
-
-	targetExe := filepath.Join(homeDir, "Applications", "RFADLauncher.AppImage")
-
-	// Если мы уже запущены из безопасного места, ничего не делаем — можно работать
-	if appImagePath == targetExe {
-		slog.Info("AppImage запущен из безопасной директории, продолжаем работу")
-		return
-	}
-
-	// Если пути не совпадают (например, запуск из ~/Загрузки), принудительно интегрируем и перезапускаем
-	slog.Info("AppImage запущен извне безопасной директории. Начинаем интеграцию (обновление)...", 
-		"currentPath", appImagePath, 
-		"targetPath", targetExe)
-		
-	if err := a.IntegrateAppImageAndRelaunch(); err != nil {
-		slog.Error("Не удалось выполнить автоинтеграцию AppImage", "error", err)
-	}
-}
-
 func (a *App) GetGameSettings() utils.LauncherConfig {
 	cfg, err := utils.GetLauncherConfig()
 	if err != nil {
@@ -721,6 +688,19 @@ func (a *App) GetGameSettings() utils.LauncherConfig {
 
 // UpdateSetting сохраняет измененную настройку
 func (a *App) UpdateSetting(key string, value interface{}) error {
+	initCoplite, err := utils.GetOneSetting("linux-patch-complite")
+	if err != nil {
+		slog.Warn("Не удалось прочитать настройку linux-patch-complite", "error", err)
+		return err
+	}
+
+	if initCoplite != "true" {
+		slog.Warn("Первичная установка патчей совместимости для Linux")
+		slog.Warn("Не завершена для безопасности целостности данных")
+		slog.Warn("Изменение настроек заблокированно")
+		return nil
+	}
+
 	slog.Info("UpdateSetting called", "key", key, "value", value)
 	gameRoot := GetGameRoot()
 
@@ -745,7 +725,7 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 	// --- 2. МАРШРУТИЗАЦИЯ НАСТРОЕК ---
 	switch key {
 	case "mangoHud":
-		utils.SetOneSetting("MangoHud:", value)
+		utils.SetOneSetting("MangoHud", value)
 
 	case "fsr":
 		cfg, err := utils.GetLauncherConfig()
@@ -760,10 +740,10 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 			return err
 		}
 		application.Get().Event.Emit("update-status", map[string]string{"status": "process-finished"})
-		return utils.SetOneSetting("FSR:", value)
+		return utils.SetOneSetting("FSR", value)
 
 	case "shaderCache":
-		utils.SetOneSetting("ShaderCache:", value)
+		utils.SetOneSetting("ShaderCache", value)
 
 	case "hdr":
 		utils.SetOneSetting("HDR:", value)
@@ -809,10 +789,10 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 		application.Get().Event.Emit("update-status", map[string]string{"status": "process-finished"})
 
 		// Сохраняем настройку, чтобы лаунчер запомнил выбор при следующем запуске
-		return utils.SetOneSetting("FPSLimit:", fpsStr)
+		return utils.SetOneSetting("FPSLimit", fpsStr)
 
 	case "wineDllOverrides":
-		utils.SetOneSetting("WineDllOverrides:", value)
+		utils.SetOneSetting("WineDllOverrides", value)
 
 	case "grafikMod":
 		newMod := fmt.Sprintf("%v", value)
@@ -836,7 +816,7 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 
 		// Снимаем блокировку интерфейса при успехе
 		application.Get().Event.Emit("update-status", map[string]string{"status": "process-finished"})
-		return utils.SetOneSetting("GrafikMod:", newMod)
+		return utils.SetOneSetting("GrafikMod", newMod)
 
 	case "fsrLvl":
 		cfg, err := utils.GetLauncherConfig()
@@ -845,10 +825,10 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 			return err
 		}
 
-		utils.SetOneSetting("FsrLvl:", value)
+		utils.SetOneSetting("FsrLvl", value)
 		err = fsrswitch.SyncFSRSettings(gameRoot, cfg.GrafikMod)
 		if err != nil {
-			utils.SetOneSetting("FsrLvl:", true)
+			utils.SetOneSetting("FsrLvl", true)
 			return err
 		}
 
@@ -863,13 +843,24 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 }
 
 func (a *App) OpenProtonTrics() error {
+	initCoplite, err := utils.GetOneSetting("linux-patch-complite")
+	if err != nil {
+		slog.Warn("Не удалось прочитать настройку linux-patch-complite", "error", err)
+		return err
+	}
+
+	if initCoplite != "true" {
+		slog.Warn("Первичная установка патчей совместимости для Linux")
+		slog.Warn("Не завершена для безопасности целостности данных")
+		slog.Warn("Открытие winetricks заблокированно")
+		return nil
+	}
+
 	slog.Info("OpenWinetricks called")
 
-	// 1. Ищем классический winetricks, так как он умеет работать с любыми папками
-	binPath, err := exec.LookPath("winetricks")
-	if err != nil {
-		slog.Error("winetricks не найден в системе", "error", err)
-		return fmt.Errorf("winetricks не установлен: %w", err)
+	if !utils.HostCommandExists("winetricks") {
+		slog.Error("winetricks не найден на хост-системе")
+		return fmt.Errorf("winetricks не установлен на хосте")
 	}
 
 	gameRoot := GetGameRoot()
@@ -877,20 +868,14 @@ func (a *App) OpenProtonTrics() error {
 		return fmt.Errorf("не удалось определить путь к игре")
 	}
 
-	// 2. Формируем пути к нашему префиксу и нашему бинарнику Wine из Proton
 	prefixPath := filepath.Join(gameRoot, "wine", "prefix", "pfx")
 	wineBin := filepath.Join(gameRoot, "wine", "proton", "files", "bin", "wine")
 
-	// 3. Запускаем GUI
-	cmd := exec.Command(binPath, "--gui")
-
-	// 4. ВАЖНО: Передаем не только префикс, но и путь к кастомному Wine,
-	// чтобы winetricks не пытался использовать системный Wine
-	cmd.Env = append(os.Environ(),
+	env := append(os.Environ(),
 		"WINEPREFIX="+prefixPath,
 		"WINE="+wineBin,
 	)
-
+	cmd := utils.NewHostCommand(env, "winetricks", "--gui")
 	if err := cmd.Start(); err != nil {
 		slog.Error("Ошибка при запуске winetricks", "error", err)
 		return fmt.Errorf("ошибка запуска: %w", err)
@@ -901,6 +886,19 @@ func (a *App) OpenProtonTrics() error {
 }
 
 func (a *App) RecoverComponent(key string, force bool) error {
+	initCoplite, err := utils.GetOneSetting("linux-patch-complite")
+	if err != nil {
+		slog.Warn("Не удалось прочитать настройку linux-patch-complite", "error", err)
+		return err
+	}
+
+	if initCoplite != "true" {
+		slog.Warn("Первичная установка патчей совместимости для Linux")
+		slog.Warn("Не завершена для безопасности целостности данных")
+		slog.Warn("Функции востоновления заблокированы.")
+		return nil
+	}
+
 	slog.Info("RecoverComponent called", "key", key, "force", force)
 
 	gameRoot := GetGameRoot()

@@ -33,19 +33,41 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV GODEBUG=netdns=cgo
 RUN go install mvdan.cc/garble@${GARBLE_VERSION}
 
-# Install Zig - automatically selects correct binary for host architecture.
-# The SHA-256 is fetched from Zig's official download manifest and verified
-# before extraction to protect against MITM or corrupted downloads.
+# Install Zig - automatically selects correct binary with Dynamic Community Mirrors
 ARG ZIG_VERSION=0.14.0
 RUN ZIG_ARCH=$(case "${TARGETARCH}" in arm64) echo "aarch64" ;; *) echo "x86_64" ;; esac) && \
     ZIG_FILE="zig-linux-${ZIG_ARCH}-${ZIG_VERSION}.tar.xz" && \
-    curl -fSL "https://ziglang.org/download/${ZIG_VERSION}/${ZIG_FILE}" -o "/tmp/${ZIG_FILE}" && \
-    EXPECTED=$(curl -fsSL "https://ziglang.org/download/index.json" | \
-        python3 -c "import json,sys; d=json.load(sys.stdin); print(d[sys.argv[1]][sys.argv[2]+'-linux']['shasum'])" \
-        "${ZIG_VERSION}" "${ZIG_ARCH}") && \
-    echo "${EXPECTED}  /tmp/${ZIG_FILE}" | sha256sum -c - && \
+    SUCCESS=0 && \
+    echo "Fetching official Zig Community Mirrors list..." && \
+    MIRRORS=$(curl -fsSL --connect-timeout 10 https://ziglang.org/download/community-mirrors.txt | tr -d '\r' || printf "https://zig-mirror.tsimnet.eu\nhttps://mirror.tsukuba.wide.ad.jp/zig\n") && \
+    for MIRROR_URL in $MIRRORS "https://ziglang.org/download/${ZIG_VERSION}"; do \
+        MIRROR=$(echo "$MIRROR_URL" | sed 's:/*$::') && \
+        echo "Trying mirror: ${MIRROR}..." && \
+        if [ "$MIRROR" = "https://ziglang.org/download/${ZIG_VERSION}" ]; then \
+            DOWNLOAD_URL="${MIRROR}/${ZIG_FILE}"; \
+            JSON_URL="https://ziglang.org/download/index.json"; \
+        else \
+            DOWNLOAD_URL="${MIRROR}/${ZIG_FILE}"; \
+            JSON_URL="${MIRROR}/index.json"; \
+        fi && \
+        if curl -fSL --connect-timeout 10 --max-time 120 "$DOWNLOAD_URL" -o "/tmp/${ZIG_FILE}"; then \
+            echo "Download successful, verifying checksum..." && \
+            curl -fsSL --max-time 15 "$JSON_URL" > /tmp/index.json || continue && \
+            EXPECTED=$(python3 -c "import json,sys; d=json.load(sys.stdin); print(d[sys.argv[1]][sys.argv[2]+'-linux']['shasum'])" \
+                "${ZIG_VERSION}" "${ZIG_ARCH}" < /tmp/index.json) && \
+            if echo "${EXPECTED}  /tmp/${ZIG_FILE}" | sha256sum -c -; then \
+                SUCCESS=1; \
+                break; \
+            else \
+                echo "Checksum failed for ${MIRROR}"; \
+            fi; \
+        else \
+            echo "Mirror ${MIRROR} failed or timed out. Moving to next..."; \
+        fi; \
+    done && \
+    if [ "$SUCCESS" -eq 0 ]; then echo "FATAL: All mirrors failed"; exit 1; fi && \
     tar -xJ -f "/tmp/${ZIG_FILE}" -C /opt && \
-    rm "/tmp/${ZIG_FILE}" && \
+    rm -f "/tmp/${ZIG_FILE}" /tmp/index.json && \
     ln -s /opt/zig-linux-${ZIG_ARCH}-${ZIG_VERSION}/zig /usr/local/bin/zig
 
 # Download macOS SDK (required for darwin targets)
@@ -220,9 +242,6 @@ ${COMPILER} -tags "$TAGS" -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o bin/$
 echo "Built: bin/${APP}-${GOOS}-${GOARCH}${EXT}"
 SCRIPT
 RUN chmod +x /usr/local/bin/build.sh
-
-RUN ln -s /usr/lib/x86_64-linux-gnu/gtk-4.0 /usr/lib/gtk-4.0 || true
-RUN cp -r /usr/lib/x86_64-linux-gnu/gtk-4.0 /usr/lib/gtk-4.0 || true
 
 WORKDIR /app
 ENTRYPOINT ["/usr/local/bin/build.sh"]

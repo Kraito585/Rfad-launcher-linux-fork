@@ -1,106 +1,85 @@
 steps:
   build-artifacts:
-    image: ubuntu:24.04
+    image: golang:1.26-trixie
     timeout: 2h
-    environment:
-      DEBIAN_FRONTEND: noninteractive
-      APPIMAGE_EXTRACT_AND_RUN: "1"
-    secrets: [GOOGLE_CREDENTIALS]
+    volumes:
+      - /opt/rfad-artifacts:/export
     commands:
-      - apt-get update
-      - apt-get install -y curl wget git build-essential pkg-config libgtk-4-dev libwebkitgtk-6.0-dev file
-      - curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-      - apt-get install -y nodejs
-      - wget https://go.dev/dl/go1.22.5.linux-amd64.tar.gz
-      - tar -C /usr/local -xzf go1.22.5.linux-amd64.tar.gz
-      - export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
-      - go install github.com/wailsapp/wails/v3/cmd/wails3@latest
-      - mkdir -p embed
-      - echo "$GOOGLE_CREDENTIALS" > embed/credentials.json
-      - wails3 task linux:package
+      - chmod +x build_linux.sh
+      - ./build_linux.sh --internal
+      - cp -r bin/* /export/
       - |
         if [ ! -f "CHANGELOG.md" ]; then
           echo "$CI_COMMIT_MESSAGE" > CHANGELOG.md
         fi
 
-  # === 2. ЭТАП ТЕСТИРОВАНИЯ ЗАВИСИМОСТЕЙ ===
-  test-cachyos:
+  # ==========================================
+  # === БЛОК 1: ТЕСТИРОВАНИЕ ARCH-LINUX ===
+  # ==========================================
+
+  test-cachyos-zst:
     image: cachyos/cachyos:latest
     commands:
-      # Устанавливаем графические либы, которые и так есть у десктопных пользователей
       - pacman -Syu --noconfirm libx11 wayland harfbuzz fribidi mesa libdrm fontconfig
-      # Устанавливаем родной пакет ZST
       - pacman -U --noconfirm bin/RFADLauncherLinux.pkg.tar.zst
-      - |
-        if ldd /usr/bin/RFADLauncherLinux | grep -q "not found"; then
-          echo "КРИТИЧЕСКАЯ ОШИБКА: Отсутствуют зависимости!";
-          ldd /usr/bin/RFADLauncherLinux | grep "not found";
-          exit 1;
-        else
-          echo "Все зависимости CachyOS успешно разрешены!";
-        fi
+      - ldd /usr/bin/RFADLauncherLinux | grep -q "not found" && { ldd /usr/bin/RFADLauncherLinux | grep "not found"; exit 1; } || echo "CachyOS ZST OK!"
+    when: &test_conditions
+      - event: [push, pull_request]
+        evaluate: 'not (CI_COMMIT_MESSAGE contains "[skip tests]")'
 
-  test-garuda:
-    image: archlinux:latest # Официального образа Garuda нет, используем Arch как базу
+  test-garuda-zst:
+    image: archlinux:latest # База Garuda
     commands:
       - pacman -Syu --noconfirm libx11 wayland harfbuzz fribidi mesa libdrm fontconfig
       - pacman -U --noconfirm bin/RFADLauncherLinux.pkg.tar.zst
-      - |
-        if ldd /usr/bin/RFADLauncherLinux | grep -q "not found"; then
-          echo "КРИТИЧЕСКАЯ ОШИБКА: Отсутствуют зависимости!";
-          ldd /usr/bin/RFADLauncherLinux | grep "not found";
-          exit 1;
-        else
-          echo "Все зависимости Garuda/Arch успешно разрешены!";
-        fi
+      - ldd /usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "Garuda ZST OK!"
+    when: *test_conditions
 
-  test-debian:
-    image: debian:12-slim
-    environment:
-      DEBIAN_FRONTEND: noninteractive
+  test-manjaro-zst:
+    image: manjarolinux/base:latest
     commands:
-      - apt-get update
-      - apt-get install -y ./bin/RFADLauncherLinux.deb
-      - |
-        if ldd /usr/bin/RFADLauncherLinux | grep -q "not found"; then
-          echo "КРИТИЧЕСКАЯ ОШИБКА: Отсутствуют зависимости!";
-          ldd /usr/bin/RFADLauncherLinux | grep "not found";
-          exit 1;
-        else
-          echo "Все зависимости DEB успешно разрешены!";
-        fi
+      - pacman -Syu --noconfirm libx11 wayland harfbuzz fribidi mesa libdrm fontconfig
+      - pacman -U --noconfirm bin/RFADLauncherLinux.pkg.tar.zst
+      - ldd /usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "Manjaro ZST OK!"
+    when: *test_conditions
 
-  test-fedora:
-    image: fedora:40
-    commands:
-      - dnf install -y ./bin/RFADLauncherLinux.rpm
-      - |
-        if ldd /usr/bin/RFADLauncherLinux | grep -q "not found"; then
-          echo "КРИТИЧЕСКАЯ ОШИБКА: Отсутствуют зависимости!";
-          ldd /usr/bin/RFADLauncherLinux | grep "not found";
-          exit 1;
-        else
-          echo "Все зависимости RPM успешно разрешены!";
-        fi
+  # ==========================================
+  # === БЛОК 2: ТЕСТИРОВАНИЕ UBUNTU/DEBIAN ===
+  # ==========================================
 
-  test-ubuntu:
+  test-ubuntu-deb:
     image: ubuntu:24.04
     environment:
       DEBIAN_FRONTEND: noninteractive
     commands:
-      - apt-get update
-      # Устанавливаем нативный DEB пакет. apt автоматически подтянет X11, Wayland и прочие зависимости.
-      - apt-get install -y ./bin/RFADLauncherLinux.deb
-      - |
-        if ldd /usr/bin/RFADLauncherLinux | grep -q "not found"; then
-          echo "КРИТИЧЕСКАЯ ОШИБКА: Отсутствуют зависимости!";
-          ldd /usr/bin/RFADLauncherLinux | grep "not found";
-          exit 1;
-        else
-          echo "Все зависимости Ubuntu успешно разрешены!";
-        fi
+      - apt-get update && apt-get install -y ./bin/RFADLauncherLinux.deb
+      - ldd /usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "Ubuntu DEB OK!"
+    when: *test_conditions
 
-  # === 3. ЭТАП ПУБЛИКАЦИИ ===
+  test-debian-deb:
+    image: debian:12-slim
+    environment:
+      DEBIAN_FRONTEND: noninteractive
+    commands:
+      - apt-get update && apt-get install -y ./bin/RFADLauncherLinux.deb
+      - ldd /usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "Debian DEB OK!"
+    when: *test_conditions
+
+  # ==========================================
+  # === БЛОК 3: ТЕСТИРОВАНИЕ FEDORA ===
+  # ==========================================
+
+  test-fedora-rpm:
+    image: fedora:40
+    commands:
+      - dnf install -y ./bin/RFADLauncherLinux.rpm
+      - ldd /usr/bin/RFADLauncherLinux | grep -q "not found" && { exit 1; } || echo "Fedora RPM OK!"
+    when: *test_conditions
+
+  # ==========================================
+  # === БЛОК 4: ПУБЛИКАЦИЯ ===
+  # ==========================================
+
   publish-github:
     image: woodpeckerci/plugin-release
     settings:
@@ -108,7 +87,7 @@ steps:
         from_secret: github_token
       files:
         - bin/RFADLauncherLinux
-        - bin/rfadlauncherlinux-x86_64.AppImage
+        - bin/RFADLauncherLinux-x86_64.flatpak
         - bin/RFADLauncherLinux.deb
         - bin/RFADLauncherLinux.rpm
         - bin/RFADLauncherLinux.pkg.tar.zst

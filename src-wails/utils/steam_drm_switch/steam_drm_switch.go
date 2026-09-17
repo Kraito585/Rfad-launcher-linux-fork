@@ -82,5 +82,5 @@ func ToggleSteamDRM(gameRoot string, enable bool, unpackCb func(float64, string)
 		valStr = "true"
 	}
 
-	return utils.SetOneSetting("SteamFix:", valStr)
+	return utils.SetOneSetting("SteamFix", valStr)
 }

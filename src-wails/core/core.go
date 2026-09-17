@@ -10,7 +10,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"rfad-launcher-linux/src-wails/downloader"
 	core "rfad-launcher-linux/src-wails/loger"
@@ -37,7 +36,7 @@ func useNvapi() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "nvidia-smi", "--query-gpu=name", "--format=csv,noheader")
+	cmd := utils.NewHostCommandContext(ctx, nil, "nvidia-smi", "--query-gpu=name", "--format=csv,noheader")
 	out, err := cmd.Output()
 	if err != nil {
 		core.LogInfo("NVAPI: ошибка выполнения nvidia-smi")
@@ -85,7 +84,7 @@ func StartMO2(gameRoot string, scriptContent, mo2Args string, isGameLaunch bool)
 
 	// Включаем Gamescope ТОЛЬКО если это запуск ИГРЫ (явный флаг), включен Wine FSR и это НЕ CommunityShader
 	if isGameLaunch && cfg.FSR && cfg.GrafikMod != "CommunityShader" {
-		if _, err := exec.LookPath("gamescope"); err != nil {
+		if !utils.HostCommandExists("gamescope") {
 			application.Get().Event.Emit("gamescope-missing")
 			enableGamescope = false
 		} else {
@@ -139,7 +138,7 @@ func StartMO2(gameRoot string, scriptContent, mo2Args string, isGameLaunch bool)
 		"QT_OPENGL=software",
 	)
 
-	cmd := exec.Command("bash", "-c", scriptContent)
+	cmd := utils.NewHostCommand(env, "bash", "-c", scriptContent)
 	cmd.Env = env
 
 	cmd.Stdout = os.Stdout
@@ -241,7 +240,7 @@ func FirstInstall(gameRoot string, libs []byte, progressCb func(float64, string)
 		writeStatus("InstallDrmSwitch")
 	}
 
-	utils.SetOneSetting("linux-patch-complite:", true)
+	utils.SetOneSetting("linux-patch-complite", true)
 
 	return nil
 }
@@ -350,13 +349,13 @@ func InstallGame(installerPath, installPath, oldMo2Path, cacheDir string, innoex
 
 	// Определяем, какой innoextract использовать: сначала системный, потом вшитый
 	innoBinPath := ""
-	sysInno, err := exec.LookPath("innoextract")
-	if err == nil {
-		testCmd := exec.Command(sysInno, "--version")
+	if utils.HostCommandExists("innoextract") {
+		// Проверяем версию на хосте!
+		testCmd := utils.NewHostCommand(nil, "innoextract", "--version")
 		testOut, testErr := testCmd.CombinedOutput()
 		if testErr == nil && strings.Contains(string(testOut), "innoextract") {
-			innoBinPath = sysInno
-			slog.Info("Using system innoextract", "path", innoBinPath)
+			innoBinPath = "innoextract" // flatpak-spawn сам найдет его на хосте
+			slog.Info("Using system innoextract via host", "path", innoBinPath)
 		} else {
 			slog.Warn("System innoextract not working", "error", testErr, "output", string(testOut))
 		}
@@ -393,8 +392,8 @@ func InstallGame(installerPath, installPath, oldMo2Path, cacheDir string, innoex
 		}
 
 		fullCmd := fmt.Sprintf("%s --version", innoBinPath)
-		slog.Info("Testing embedded innoextract", "command", fullCmd)
-		testCmd := exec.Command(innoBinPath, "--version")
+		slog.Info("Testing embedded innoextract via host", "command", fullCmd)
+		testCmd := utils.NewHostCommand(nil, innoBinPath, "--version")
 		testOut, testErr := testCmd.CombinedOutput()
 		if testErr != nil || !strings.Contains(string(testOut), "innoextract") {
 			return fmt.Errorf("встроенный innoextract не работает: %v, output: %s", testErr, string(testOut))
@@ -404,7 +403,7 @@ func InstallGame(installerPath, installPath, oldMo2Path, cacheDir string, innoex
 
 	cmdStr := fmt.Sprintf("%s -d %q %q", innoBinPath, installPath, installerPath)
 	slog.Info("Running innoextract", "full_command", cmdStr)
-	cmd := exec.Command("bash", "-c", cmdStr)
+	cmd := utils.NewHostCommand(nil, "bash", "-c", cmdStr)
 	cmd.Dir = filepath.Dir(installerPath)
 
 	var stdoutBuf, stderrBuf bytes.Buffer
@@ -467,7 +466,7 @@ Loop:
 			progressCb(0.0, "Подготовка к переносу MO2 (вычисление размера)...")
 		}
 		slog.Info("Начинаем портирование MO2", "oldMo2Path", oldMo2Path)
-		
+
 		// Передаем progressCb в функцию
 		if err := portMO2Directory(oldMo2Path, installPath, progressCb); err != nil {
 			slog.Error("Ошибка при портировании MO2", "error", err)
@@ -536,7 +535,7 @@ Loop:
 		case <-ticker.C:
 			if progressCb != nil {
 				currentSize, _ := DirSize(dstMo2Dir)
-				
+
 				percent := float64(currentSize) / float64(expectedSize)
 				if percent > 0.99 {
 					percent = 0.99
@@ -544,7 +543,7 @@ Loop:
 
 				gbCurrent := float64(currentSize) / (1024 * 1024 * 1024)
 				gbTotal := float64(expectedSize) / (1024 * 1024 * 1024)
-				
+
 				msg := fmt.Sprintf("Перенос модов (MO2): %.1f ГБ / %.1f ГБ", gbCurrent, gbTotal)
 				progressCb(percent, msg)
 			}
