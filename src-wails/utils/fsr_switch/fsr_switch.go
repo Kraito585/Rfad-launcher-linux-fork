@@ -13,37 +13,33 @@ import (
 func GetBaseResolution() (int, int) {
 	primaryScreen := application.Get().Screen.GetPrimary()
 	if primaryScreen == nil {
-		return 1920, 1080 // Фоллбэк
+		return 1920, 1080
 	}
 
 	width := primaryScreen.PhysicalBounds.Width
 	height := primaryScreen.PhysicalBounds.Height
 
-	// Проверяем модель устройства для обнаружения Steam Deck LCD (Jupiter)
 	const dmiPath = "/sys/class/dmi/id/product_name"
 	var data []byte
 	var err error
 
 	if utils.IsFlatpak() {
-		// Используем нашу готовую функцию для безопасного проброса команды "cat" на хост
 		cmd := utils.NewHostCommand(nil, "cat", dmiPath)
 		data, err = cmd.Output()
 	} else {
-		// Вне песочницы читаем файл напрямую для максимальной скорости
 		data, err = os.ReadFile(dmiPath)
 	}
 
 	if err == nil {
 		productName := strings.TrimSpace(string(data))
 		if productName == "Jupiter" {
-			// Аппаратный экран Jupiter (LCD) повернут на 90 градусов (800x1280).
-			// Отзеркаливаем значения для корректной работы FSR и Wine.
 			return height, width
 		}
 	}
 
 	return width, height
 }
+
 func SyncFSRSettings(gameRoot string, grafikMod string) error {
 	grafikMod = strings.TrimSpace(grafikMod)
 	useFSRStr, _ := utils.GetOneSetting("FSR")
