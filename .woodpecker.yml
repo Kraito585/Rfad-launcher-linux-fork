@@ -79,7 +79,55 @@ steps:
     when: *test_conditions
 
   # ==========================================
-  # === БЛОК 4: ПУБЛИКАЦИЯ ===
+  # === БЛОК 4: ГЕНЕРАЦИЯ AUR И GEMFURY ===
+  # ==========================================
+
+  generate-aur-pkgbuild:
+    image: alpine:latest
+    commands:
+      - apk add --no-cache coreutils
+      - DEB_SHA=$(sha256sum bin/RFADLauncherLinux.deb | awk '{print $1}')
+      - VERSION=${CI_COMMIT_TAG#v} # Удаляет префикс 'v', если он есть (v16.09 -> 16.09)
+      - |
+        cat <<EOF > bin/PKGBUILD
+        pkgname=rfad-launcher-bin
+        pkgver=${VERSION}
+        pkgrel=1
+        pkgdesc="Launcher for RFAD SE"
+        arch=('x86_64')
+        url="${CI_REPO_URL:-https://github.com/$CI_REPO}"
+        license=('MIT')
+        depends=('gtk4' 'webkitgtk-6.0')
+        provides=('rfad-launcher')
+        conflicts=('rfad-launcher')
+        source=("https://github.com/$CI_REPO/releases/download/${CI_COMMIT_TAG}/RFADLauncherLinux.deb")
+        sha256sums=('${DEB_SHA}')
+
+        package() {
+            # makepkg автоматически распакует .deb архив, останется распаковать данные
+            tar -xf data.tar.* -C "\${pkgdir}"
+        }
+        EOF
+      - echo "PKGBUILD для версии $VERSION успешно сгенерирован!"
+    when:
+      - event: tag
+
+  publish-gemfury:
+    image: curlimages/curl:latest
+    environment:
+      FURY_TOKEN:
+        from_secret: gemfury_token
+      FURY_USER:
+        from_secret: gemfury_user
+    commands:
+      - echo "Загрузка DEB и RPM в Gemfury..."
+      - curl -F package=@bin/RFADLauncherLinux.deb https://${FURY_TOKEN}@push.fury.io/${FURY_USER}/
+      - curl -F package=@bin/RFADLauncherLinux.rpm https://${FURY_TOKEN}@push.fury.io/${FURY_USER}/
+    when:
+      - event: tag
+
+  # ==========================================
+  # === БЛОК 5: ПУБЛИКАЦИЯ GITHUB ===
   # ==========================================
 
   publish-github:
@@ -95,8 +143,8 @@ steps:
           --title "RFAD Launcher $CI_COMMIT_TAG" \
           --notes-file CHANGELOG.md || echo "Релиз уже существует, переходим к загрузке файлов..."
 
-        # 2. Обычная строка вместо bash-массива (работает в Alpine sh и не ломает парсер CI)
-        FILES="bin/RFADLauncherLinux bin/RFADLauncherLinux-x86_64.flatpak bin/RFADLauncherLinux.deb bin/RFADLauncherLinux.rpm bin/RFADLauncherLinux.pkg.tar.zst"
+        # 2. Обычная строка вместо bash-массива (добавлен PKGBUILD)
+        FILES="bin/RFADLauncherLinux bin/RFADLauncherLinux-x86_64.flatpak bin/RFADLauncherLinux.deb bin/RFADLauncherLinux.rpm bin/RFADLauncherLinux.pkg.tar.zst bin/PKGBUILD"
 
         # 3. Умная загрузка с 3 попытками для каждого файла
         for file in $FILES; do
