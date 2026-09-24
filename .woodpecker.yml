@@ -120,7 +120,7 @@ steps:
     commands:
       # Устанавливаем генераторы
       - apt-get update
-      - apt-get install -y git dpkg-dev createrepo-c flatpak ostree pacman-package-manager
+      - apt-get install -y git dpkg-dev createrepo-c flatpak ostree pacman-package-manager zstd libarchive-tools
 
       - git config --global user.email "ci-bot@rfad.local"
       - git config --global user.name "CI Bot"
