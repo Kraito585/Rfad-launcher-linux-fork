@@ -415,17 +415,13 @@ const processButtonClick = async () => {
     return;
   }
 
+  // Если это первый запуск — применяем Linux-патч (распаковка префикса, установка .NET/VCRedist)
   if (needsFirstInstall.value) {
     await startFirstInstallFlow();
     return;
   }
 
-  if (firstStart.value && !hideUpdate.value && updateAvailable.value) {
-    await update(true);
-    return;
-  }
-
-  // Приоритет 3: Запуск игры
+  // Во всех остальных случаях кнопка делает ТОЛЬКО одно — запускает игру.
   await startGame();
 };
 
@@ -442,6 +438,13 @@ const checkPathStatus = async () => {
 // ===== Жизненный цикл =====
 onMounted(async () => {
   firstStart.value = !localStorage.getItem("lastUpdate");
+
+  try {
+    launcherVersion.value = await App.GetLauncherVersion();
+  } catch (e) {
+    console.error("Ошибка загрузки версии лаунчера:", e);
+    launcherVersion.value = "Ошибка";
+  }
 
   await checkPathStatus();
 
@@ -896,10 +899,8 @@ onMounted(async () => {
                 isGameStarting
                   ? "Запущено"
                   : needsFirstInstall
-                    ? "Обновить"
-                    : firstStart && !hideUpdate && updateAvailable
-                      ? "Обновить"
-                      : "Играть"
+                    ? "Patch"
+                    : "Играть"
               }}
             </Button>
             <DropdownButton

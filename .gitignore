@@ -13,3 +13,4 @@ RFAD_Launcher-x86_64.AppImage
 .bindings*
 AppDir
 squashfs-root
+core.*

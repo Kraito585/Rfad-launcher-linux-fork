@@ -17,10 +17,14 @@ func IsFlatpak() bool {
 func NewHostCommand(env []string, name string, args ...string) *exec.Cmd {
 	if IsFlatpak() {
 		var flatpakArgs []string
-		flatpakArgs = append(flatpakArgs, "--host")
 
+		// Используем системную утилиту env на хосте для абсолютно безопасной
+		// инициализации переменных окружения (обходим баги парсера --env=)
+		flatpakArgs = append(flatpakArgs, "--host", "env")
+
+		// Передаем переменные напрямую в env (формат "KEY=VALUE")
 		for _, e := range env {
-			flatpakArgs = append(flatpakArgs, "--env="+e)
+			flatpakArgs = append(flatpakArgs, e)
 		}
 
 		flatpakArgs = append(flatpakArgs, name)
@@ -39,10 +43,14 @@ func NewHostCommand(env []string, name string, args ...string) *exec.Cmd {
 func NewHostCommandContext(ctx context.Context, env []string, name string, args ...string) *exec.Cmd {
 	if IsFlatpak() {
 		var flatpakArgs []string
-		flatpakArgs = append(flatpakArgs, "--host")
+
+		// Используем системную утилиту env на хосте
+		flatpakArgs = append(flatpakArgs, "--host", "env")
+
 		for _, e := range env {
-			flatpakArgs = append(flatpakArgs, "--env="+e)
+			flatpakArgs = append(flatpakArgs, e)
 		}
+
 		flatpakArgs = append(flatpakArgs, name)
 		flatpakArgs = append(flatpakArgs, args...)
 
@@ -55,6 +63,7 @@ func NewHostCommandContext(ctx context.Context, env []string, name string, args 
 	}
 	return cmd
 }
+
 func HostCommandExists(name string) bool {
 	if IsFlatpak() {
 		err := exec.Command("flatpak-spawn", "--host", "which", name).Run()

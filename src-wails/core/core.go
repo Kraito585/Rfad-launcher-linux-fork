@@ -64,6 +64,100 @@ func useNvapi() bool {
 	return hasNVAPI
 }
 
+// func StartMO2(gameRoot string, scriptContent, mo2Args string, isGameLaunch bool) error {
+// 	// 1. Считываем настройки лаунчера
+// 	cfg, err := utils.GetLauncherConfig()
+// 	if err != nil {
+// 		core.LogInfo("Не удалось прочитать launcher_config.txt, используются настройки по умолчанию: %v", err)
+// 		if cfg == nil {
+// 			cfg = &utils.LauncherConfig{
+// 				WineDllOverrides: "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b",
+// 			}
+// 		}
+// 	}
+
+// 	hasNvapi := useNvapi()
+// 	useGamemode := true
+// 	enableGamescope := false
+
+// 	// Включаем Gamescope ТОЛЬКО если это запуск ИГРЫ (явный флаг), включен Wine FSR и это НЕ CommunityShader
+// 	if isGameLaunch && cfg.FSR && cfg.GrafikMod != "CommunityShader" {
+// 		if !utils.HostCommandExists("gamescope") {
+// 			application.Get().Event.Emit("gamescope-missing")
+// 			enableGamescope = false
+// 		} else {
+// 			enableGamescope = true
+// 		}
+// 	}
+
+// 	wineBin := filepath.Join(gameRoot, "wine", "proton", "files", "bin", "wine")
+// 	exePath := filepath.Join(gameRoot, "MO2", "ModOrganizer.exe")
+// 	prefixPath := filepath.Join(gameRoot, "wine", "prefix", "pfx")
+
+// 	wineLibDir := filepath.Join(gameRoot, "wine", "proton", "files", "lib")
+// 	wineLib64Dir := filepath.Join(gameRoot, "wine", "proton", "files", "lib64")
+// 	wineBinDir := filepath.Join(gameRoot, "wine", "proton", "files", "bin")
+
+// 	if _, err := os.Stat(wineBin); os.IsNotExist(err) {
+// 		return fmt.Errorf("wine не найден в %s", wineBin)
+// 	}
+// 	if _, err := os.Stat(exePath); os.IsNotExist(err) {
+// 		return fmt.Errorf("исполняемый файл не найден: %s", exePath)
+// 	}
+
+// 	// Формируем правильные пути для поиска библиотек
+// 	wineDllPath := filepath.Join(wineLibDir, "wine") + ":" + filepath.Join(wineLib64Dir, "wine") + ":" + filepath.Dir(exePath)
+// 	ldLibraryPath := wineLibDir + ":" + wineLib64Dir + ":" +
+// 		filepath.Join(wineLibDir, "x86_64-linux-gnu") + ":" +
+// 		filepath.Join(wineLibDir, "i386-linux-gnu") + ":" + os.Getenv("LD_LIBRARY_PATH")
+
+// 	scriptPrefix := fmt.Sprintf(`
+// export GAME_ROOT=%q
+// export WINE_BIN=%q
+// export EXE_PATH=%q
+// export PREFIX_PATH=%q
+// export MO2_ARGS=%q
+// export WINEDLLPATH=%q
+// export LD_LIBRARY_PATH=%q
+// export PATH=%q
+// export WINEDLLOVERRIDES_PARAM=%q
+// export ENABLE_NVAPI=%q
+// export ENABLE_HDR=%q
+// export ENABLE_FSR=%q
+// export ENABLE_GAMESCOPE=%q
+// export ENABLE_MANGOHUD=%q
+// export ENABLE_SHADER_CACHE=%q
+// export USE_GAMEMODE=%q
+// export STEAM_FIX_ENABLED=%q
+// export QT_OPENGL="software"
+// `,
+// 		gameRoot, wineBin, exePath, prefixPath, mo2Args, wineDllPath, ldLibraryPath, wineBinDir+":"+os.Getenv("PATH"),
+// 		cfg.WineDllOverrides, strconv.FormatBool(hasNvapi), strconv.FormatBool(cfg.HDR), strconv.FormatBool(cfg.FSR),
+// 		strconv.FormatBool(enableGamescope), strconv.FormatBool(cfg.MangoHud), strconv.FormatBool(cfg.ShaderCache),
+// 		strconv.FormatBool(useGamemode), strconv.FormatBool(cfg.SteamFix),
+// 	)
+
+// 	// Склеиваем переменные и оригинальный скрипт запуска
+// 	fullScript := scriptPrefix + "\n" + scriptContent
+
+// 	// Обратите внимание: первый аргумент (env) теперь nil!
+// 	cmd := utils.NewHostCommand(nil, "bash", "-c", fullScript)
+
+// 	cmd.Stdout = os.Stdout
+// 	cmd.Stderr = os.Stderr
+
+// 	go func() {
+// 		err := cmd.Run()
+// 		if err != nil {
+// 			application.Get().Event.Emit("game-error", err.Error())
+// 		} else {
+// 			application.Get().Event.Emit("game-exit")
+// 		}
+// 	}()
+
+// 	return nil
+// }
+
 func StartMO2(gameRoot string, scriptContent, mo2Args string, isGameLaunch bool) error {
 	// 1. Считываем настройки лаунчера
 	cfg, err := utils.GetLauncherConfig()
@@ -77,9 +171,7 @@ func StartMO2(gameRoot string, scriptContent, mo2Args string, isGameLaunch bool)
 	}
 
 	hasNvapi := useNvapi()
-
 	useGamemode := true
-
 	enableGamescope := false
 
 	// Включаем Gamescope ТОЛЬКО если это запуск ИГРЫ (явный флаг), включен Wine FSR и это НЕ CommunityShader
@@ -92,54 +184,83 @@ func StartMO2(gameRoot string, scriptContent, mo2Args string, isGameLaunch bool)
 		}
 	}
 
-	wineBin := filepath.Join(gameRoot, "wine", "proton", "files", "bin", "wine")
 	exePath := filepath.Join(gameRoot, "MO2", "ModOrganizer.exe")
 	prefixPath := filepath.Join(gameRoot, "wine", "prefix", "pfx")
 
-	wineLibDir := filepath.Join(gameRoot, "wine", "proton", "files", "lib")
-	wineLib64Dir := filepath.Join(gameRoot, "wine", "proton", "files", "lib64")
-	wineBinDir := filepath.Join(gameRoot, "wine", "proton", "files", "bin")
+	// =========================================================================
+	// 2. БАЗОВЫЕ ПУТИ PROTON
+	// =========================================================================
+	protonDir := filepath.Join(gameRoot, "wine", "proton", "files")
+	wineBinDir := filepath.Join(protonDir, "bin")
+	wineLibDir := filepath.Join(protonDir, "lib")
+	wineLib64Dir := filepath.Join(protonDir, "lib64")
+	wineShareDir := filepath.Join(protonDir, "share", "wine")
+
+	wineBin := filepath.Join(wineBinDir, "wine")
+	if _, err := os.Stat(wineBin); os.IsNotExist(err) {
+		wineBin = filepath.Join(wineBinDir, "wine64") // Фоллбэк
+	}
+	wineServer := filepath.Join(wineBinDir, "wineserver")
 
 	if _, err := os.Stat(wineBin); os.IsNotExist(err) {
-		return fmt.Errorf("wine не найден в %s", wineBin)
+		return fmt.Errorf("wine не найден: %s", wineBin)
 	}
 	if _, err := os.Stat(exePath); os.IsNotExist(err) {
 		return fmt.Errorf("исполняемый файл не найден: %s", exePath)
 	}
 
-	// Формируем правильные пути для поиска библиотек
-	wineDllPath := filepath.Join(wineLibDir, "wine") + ":" + filepath.Join(wineLib64Dir, "wine") + ":" + filepath.Dir(exePath)
+	// =========================================================================
+	// 3. ФОРМИРОВАНИЕ ИДЕАЛЬНОГО ОКРУЖЕНИЯ PROTON
+	// =========================================================================
+	// Добавляем новые PE-папки GE-Proton 11 и папку MO2 в конец
+	wineDllPath := strings.Join([]string{
+		filepath.Join(wineLib64Dir, "wine", "x86_64-windows"),
+		filepath.Join(wineLibDir, "wine", "x86_64-windows"),
+		filepath.Join(wineLibDir, "wine", "i386-windows"),
+		filepath.Join(wineLib64Dir, "wine"),
+		filepath.Join(wineLibDir, "wine"),
+		filepath.Dir(exePath),
+	}, ":")
+
 	ldLibraryPath := wineLibDir + ":" + wineLib64Dir + ":" +
 		filepath.Join(wineLibDir, "x86_64-linux-gnu") + ":" +
 		filepath.Join(wineLibDir, "i386-linux-gnu") + ":" + os.Getenv("LD_LIBRARY_PATH")
 
-	env := os.Environ()
-	env = append(env,
-		"GAME_ROOT="+gameRoot,
-		"WINE_BIN="+wineBin,
-		"EXE_PATH="+exePath,
-		"PREFIX_PATH="+prefixPath,
-		"MO2_ARGS="+mo2Args,
-		"WINEDLLPATH="+wineDllPath,
-		"LD_LIBRARY_PATH="+ldLibraryPath,
-		"PATH="+wineBinDir+":"+os.Getenv("PATH"),
-
-		// === ПЕРЕДАЕМ НАСТРОЙКИ ИЗ GO В BASH ===
-		"WINEDLLOVERRIDES_PARAM="+cfg.WineDllOverrides,
-		"ENABLE_NVAPI="+strconv.FormatBool(hasNvapi),
-		"ENABLE_HDR="+strconv.FormatBool(cfg.HDR),
-		"ENABLE_FSR="+strconv.FormatBool(cfg.FSR),
-		"ENABLE_GAMESCOPE="+strconv.FormatBool(enableGamescope), // Передаем вычисленный флаг
-		"ENABLE_MANGOHUD="+strconv.FormatBool(cfg.MangoHud),
-		"ENABLE_SHADER_CACHE="+strconv.FormatBool(cfg.ShaderCache),
-		"USE_GAMEMODE="+strconv.FormatBool(useGamemode),
-		"STEAM_FIX_ENABLED="+strconv.FormatBool(cfg.SteamFix),
-
-		"QT_OPENGL=software",
+	// Передаем WINEDATADIR и WINESERVER в bash скрипт
+	scriptPrefix := fmt.Sprintf(`
+export GAME_ROOT=%q
+export WINE_BIN=%q
+export EXE_PATH=%q
+export PREFIX_PATH=%q
+export MO2_ARGS=%q
+export WINEDLLPATH=%q
+export WINEDATADIR=%q
+export WINESERVER=%q
+export LD_LIBRARY_PATH=%q
+export PATH=%q
+export WINEDLLOVERRIDES_PARAM=%q
+export ENABLE_NVAPI=%q
+export ENABLE_HDR=%q
+export ENABLE_FSR=%q
+export ENABLE_GAMESCOPE=%q
+export ENABLE_MANGOHUD=%q
+export ENABLE_SHADER_CACHE=%q
+export USE_GAMEMODE=%q
+export STEAM_FIX_ENABLED=%q
+export QT_OPENGL="software"
+`,
+		gameRoot, wineBin, exePath, prefixPath, mo2Args,
+		wineDllPath, wineShareDir, wineServer, ldLibraryPath, wineBinDir+":"+os.Getenv("PATH"),
+		cfg.WineDllOverrides, strconv.FormatBool(hasNvapi), strconv.FormatBool(cfg.HDR), strconv.FormatBool(cfg.FSR),
+		strconv.FormatBool(enableGamescope), strconv.FormatBool(cfg.MangoHud), strconv.FormatBool(cfg.ShaderCache),
+		strconv.FormatBool(useGamemode), strconv.FormatBool(cfg.SteamFix),
 	)
 
-	cmd := utils.NewHostCommand(env, "bash", "-c", scriptContent)
-	cmd.Env = env
+	// Склеиваем переменные и оригинальный скрипт запуска
+	fullScript := scriptPrefix + "\n" + scriptContent
+
+	// Запускаем через bash на хосте
+	cmd := utils.NewHostCommand(nil, "bash", "-c", fullScript)
 
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -254,7 +375,7 @@ func FirstDownload(gameRoot string, offlineConfig []byte, progressCb func(float6
 		return err
 	}
 
-	if err := downloader.DownloadPrefix(gameRoot, false, progressCb); err != nil {
+	if err := downloader.DownloadRedists(gameRoot, false, progressCb); err != nil {
 		return err
 	}
 
@@ -401,9 +522,8 @@ func InstallGame(installerPath, installPath, oldMo2Path, cacheDir string, innoex
 		slog.Info("Using embedded innoextract", "path", innoBinPath)
 	}
 
-	cmdStr := fmt.Sprintf("%s -d %q %q", innoBinPath, installPath, installerPath)
-	slog.Info("Running innoextract", "full_command", cmdStr)
-	cmd := utils.NewHostCommand(nil, "bash", "-c", cmdStr)
+	slog.Info("Running innoextract", "bin", innoBinPath, "target", installPath, "installer", installerPath)
+	cmd := utils.NewHostCommand(nil, innoBinPath, "-d", installPath, installerPath)
 	cmd.Dir = filepath.Dir(installerPath)
 
 	var stdoutBuf, stderrBuf bytes.Buffer

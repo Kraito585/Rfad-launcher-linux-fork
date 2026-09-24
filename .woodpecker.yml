@@ -1,6 +1,8 @@
 steps:
   build-artifacts:
     image: golang:1.26-trixie
+    environment:
+      APP_VERSION: ${CI_COMMIT_TAG}
     privileged: true
     volumes:
       - /opt/rfad-artifacts:/export

@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"rfad-launcher-linux/src-wails/core"
 	"rfad-launcher-linux/src-wails/downloader"
@@ -126,26 +125,26 @@ func (a *App) GetRemoteVersion() string {
 	resp, err := client.Get(exportURL)
 	if err != nil {
 		slog.Warn("Не удалось подключиться к Google Docs", "err", err)
-		return "DriveError"
+		return a.GetLocalVersion()
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		slog.Warn("Google Docs вернул статус-код", "code", resp.StatusCode)
-		return "DriveError"
+		return a.GetLocalVersion()
 	}
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		slog.Warn("Ошибка чтения ответа от Google Docs", "err", err)
-		return "DriveError"
+		return a.GetLocalVersion()
 	}
 
 	version := strings.TrimSpace(string(bodyBytes))
 
-	if version == "" {
-		slog.Warn("Google Docs вернул пустую строку")
-		return "0.0"
+	if version == "" || len(version) > 20 {
+		slog.Warn("Google Docs вернул пустую строку или HTML-мусор", "length", len(version))
+		return a.GetLocalVersion()
 	}
 
 	slog.Info("Получена актуальная версия из Google Docs", "version", version)
@@ -568,102 +567,6 @@ func GetGameRoot() string {
 	return ""
 }
 
-func (a *App) IntegrateAppImageAndRelaunch() error {
-	appImagePath := os.Getenv("APPIMAGE")
-
-	// Если переменная APPIMAGE пуста, значит это DEB, RPM или запуск из исходников.
-	// Ничего не перемещаем и не перезапускаем.
-	if appImagePath == "" {
-		slog.Info("Запуск не из AppImage (DEB/RPM). Перемещение и создание ярлыка не требуется.")
-		return nil
-	}
-
-	// === Логика только для AppImage ===
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("не удалось получить домашнюю директорию: %w", err)
-	}
-
-	// Безопасное место для AppImage (стандарт для Linux)
-	targetDir := filepath.Join(homeDir, "Applications")
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
-		return fmt.Errorf("не удалось создать директорию %s: %w", targetDir, err)
-	}
-
-	targetExe := filepath.Join(targetDir, "RFADLauncher.AppImage")
-
-	// Если AppImage уже запущен из правильного места, пропускаем перемещение, но можем обновить ярлык
-	if appImagePath == targetExe {
-		slog.Info("AppImage уже находится в Applications, пропускаем копирование")
-		return nil
-	}
-
-	_ = os.Remove(targetExe)
-
-	// Копируем AppImage
-	slog.Info("Интеграция AppImage", "source", appImagePath, "target", targetExe)
-	if err := utils.CopyFile(appImagePath, targetExe); err != nil {
-		return fmt.Errorf("не удалось скопировать AppImage: %w", err)
-	}
-
-	// === Сохраняем иконку ===
-	iconPath := "utilities-terminal" // Фолбэк на стандартную иконку терминала
-	iconDir := filepath.Join(homeDir, ".local", "share", "icons")
-
-	if err := os.MkdirAll(iconDir, 0755); err == nil {
-		targetIcon := filepath.Join(iconDir, "rfad-launcher.png")
-		// Вызываем getIcon() из пакета main
-		iconData := getIcon()
-		if writeErr := os.WriteFile(targetIcon, iconData, 0644); writeErr != nil {
-			slog.Warn("Не удалось сохранить иконку на диск", "error", writeErr)
-		} else {
-			// Если успешно записали, указываем путь к нашей иконке
-			iconPath = targetIcon
-		}
-	}
-
-	// === Создаем ярлык в меню приложений пользователя ===
-	desktopDir := filepath.Join(homeDir, ".local", "share", "applications")
-	if err := os.MkdirAll(desktopDir, 0755); err == nil {
-		desktopFile := filepath.Join(desktopDir, "rfad-launcher.desktop")
-
-		desktopContent := fmt.Sprintf(`[Desktop Entry]
-			Name=RFAD SE Launcher
-			Comment=Управление и запуск сборки RFAD
-			Exec="%s"
-			Icon=%s
-			Terminal=false
-			Type=Application
-			Categories=Game;
-		`, targetExe, iconPath)
-
-		if writeErr := os.WriteFile(desktopFile, []byte(desktopContent), 0644); writeErr != nil {
-			slog.Warn("Не удалось создать ярлык .desktop", "error", writeErr)
-		} else {
-			slog.Info("Ярлык приложения успешно создан", "path", desktopFile)
-		}
-	}
-
-	// Запускаем перенесенный AppImage
-	cmd := exec.Command(targetExe)
-	cmd.Env = os.Environ()
-
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("не удалось запустить интегрированный AppImage: %w", err)
-	}
-
-	slog.Info("Перезапуск из интегрированного AppImage", "path", targetExe)
-
-	// Даем новому процессу время на старт и "убиваем" текущий (из папки Загрузки)
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		os.Exit(0)
-	}()
-
-	return nil
-}
-
 func (a *App) GetGameSettings() utils.LauncherConfig {
 	cfg, err := utils.GetLauncherConfig()
 	if err != nil {
@@ -924,13 +827,6 @@ func (a *App) RecoverComponent(key string, force bool) error {
 			return fmt.Errorf("ошибка загрузки proton: %w", err)
 		}
 
-		// 2. Скачиваем Prefix (так как мы его тоже будем сносить)
-		err = downloader.DownloadPrefix(gameRoot, true, downloadCb)
-		if err != nil {
-			application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
-			return fmt.Errorf("ошибка загрузки префикса: %w", err)
-		}
-
 		application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-started"})
 
 		unpackCb := func(p float64, msg string) {
@@ -977,20 +873,6 @@ func (a *App) RecoverComponent(key string, force bool) error {
 			slog.Info("Начата полная переустановка префикса")
 
 			application.Get().Event.Emit("update-status", map[string]string{"status": "download-started"})
-
-			downloadCb := func(p float64, speed float64, msg string) {
-				application.Get().Event.Emit("download-progress", map[string]interface{}{
-					"fileName":         msg,
-					"percentage":       p * 100,
-					"speedBytesPerSec": speed,
-				})
-			}
-
-			err := downloader.DownloadPrefix(gameRoot, true, downloadCb)
-			if err != nil {
-				application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
-				return fmt.Errorf("ошибка загрузки префикса: %w", err)
-			}
 
 			application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-started"})
 

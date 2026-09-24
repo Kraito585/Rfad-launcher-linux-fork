@@ -2,7 +2,6 @@ package recovery
 
 import (
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -18,61 +17,117 @@ func RecoverPrefix(gameRoot string) error {
 	prefixTarget := filepath.Join(gameRoot, "wine", "prefix")
 	prefixPath := filepath.Join(prefixTarget, "pfx")
 
-	slog.Info("Запуск лечения префикса", "prefixPath", prefixPath)
+	slog.Info("Запуск лечения префикса (Proton PE-режим)", "prefixPath", prefixPath)
 
-	// 1. Удаляем битые симлинки (основная причина STATUS_DLL_NOT_FOUND c0000135)
+	// =========================================================================
+	// 1. ФИКС МЕРТВЫХ СИМЛИНКОВ (ГЛАВНАЯ ПРИЧИНА c0000135)
+	// Создаем мосты в папке wine/, чтобы относительные пути ../../../../../lib
+	// из default_pfx корректно разрешались в папку proton/files/lib
+	// =========================================================================
+	wineDir := filepath.Join(gameRoot, "wine")
+
+	os.Remove(filepath.Join(wineDir, "lib"))
+	os.Symlink("proton/files/lib", filepath.Join(wineDir, "lib"))
+
+	os.Remove(filepath.Join(wineDir, "lib64"))
+	os.Symlink("proton/files/lib64", filepath.Join(wineDir, "lib64"))
+
+	os.Remove(filepath.Join(wineDir, "share"))
+	os.Symlink("proton/files/share", filepath.Join(wineDir, "share"))
+
+	slog.Info("Мосты для относительных симлинков Proton успешно созданы")
+
+	// =========================================================================
+	// 2. РАЗБЛОКИРОВКА ПРАВ
+	// =========================================================================
+	slog.Info("Выдача прав на запись (chmod +w) для префикса...")
+	chmodCmd := utils.NewHostCommand(nil, "chmod", "-R", "u+w", prefixTarget)
+	_ = chmodCmd.Run()
+
+	// =========================================================================
+	// 3. ВОССОЗДАНИЕ DOSDEVICES
+	// =========================================================================
 	dosdevicesPath := filepath.Join(prefixPath, "dosdevices")
-	if err := os.RemoveAll(dosdevicesPath); err != nil {
-		slog.Warn("Не удалось очистить dosdevices (не критично, продолжаем)", "error", err)
-	}
+	os.RemoveAll(dosdevicesPath)
+	os.MkdirAll(dosdevicesPath, 0755)
 
-	// 2. Формируем пути к встроенным библиотекам и бинарнику Proton
-	wineBin := filepath.Join(gameRoot, "wine", "proton", "files", "bin", "wine")
-	wineBinDir := filepath.Join(gameRoot, "wine", "proton", "files", "bin")
-	wineLibDir := filepath.Join(gameRoot, "wine", "proton", "files", "lib")
-	wineLib64Dir := filepath.Join(gameRoot, "wine", "proton", "files", "lib64")
+	driveCPath := filepath.Join(prefixPath, "drive_c")
+	os.MkdirAll(driveCPath, 0755)
+
+	cDrivePath := filepath.Join(dosdevicesPath, "c:")
+	os.Symlink("../drive_c", cDrivePath)
+
+	zDrivePath := filepath.Join(dosdevicesPath, "z:")
+	os.Symlink("/", zDrivePath)
+
+	// =========================================================================
+	// 4. БАЗОВЫЕ ПУТИ PROTON
+	// =========================================================================
+	protonDir := filepath.Join(gameRoot, "wine", "proton", "files")
+	wineBinDir := filepath.Join(protonDir, "bin")
+	wineLibDir := filepath.Join(protonDir, "lib")
+	wineLib64Dir := filepath.Join(protonDir, "lib64")
+	wineShareDir := filepath.Join(protonDir, "share", "wine")
+
+	wineBin := filepath.Join(wineBinDir, "wine64")
+	if _, err := os.Stat(wineBin); os.IsNotExist(err) {
+		wineBin = filepath.Join(wineBinDir, "wine")
+	}
+	wineServer := filepath.Join(wineBinDir, "wineserver")
 
 	if _, err := os.Stat(wineBin); os.IsNotExist(err) {
-		return fmt.Errorf("wine не найден, невозможно инициализировать префикс: %s", wineBin)
+		return fmt.Errorf("wine не найден: %s", wineBin)
 	}
 
-	wineDllPath := filepath.Join(wineLibDir, "wine") + ":" + filepath.Join(wineLib64Dir, "wine")
+	// =========================================================================
+	// 5. ОКРУЖЕНИЕ И ЗАПУСК
+	// =========================================================================
+	wineDllPath := filepath.Join(wineLib64Dir, "wine") + ":" + filepath.Join(wineLibDir, "wine")
 	ldLibraryPath := wineLibDir + ":" + wineLib64Dir + ":" +
 		filepath.Join(wineLibDir, "x86_64-linux-gnu") + ":" +
 		filepath.Join(wineLibDir, "i386-linux-gnu") + ":" + os.Getenv("LD_LIBRARY_PATH")
 
-	// 3. Формируем окружение для wineboot
 	env := os.Environ()
 	env = append(env,
 		"WINEPREFIX="+prefixPath,
 		"WINEDLLPATH="+wineDllPath,
+		"WINEDATADIR="+wineShareDir,
+		"WINESERVER="+wineServer,
 		"LD_LIBRARY_PATH="+ldLibraryPath,
 		"PATH="+wineBinDir+":"+os.Getenv("PATH"),
-		"WINEDEBUG=-all", // Отключаем лишний спам в консоль
+		"WINEARCH=win64",
+		"WINEESYNC=0",
+		"WINEFSYNC=0",
+		"WINEDEBUG=-all",
 	)
 
-	// 4. Выполняем wineboot -u для пересоздания структуры
-	// Заменили CommandContext на обычный Command
+	slog.Info("Запуск wineboot -u", "wineBin", wineBin)
 	cmd := utils.NewHostCommand(env, wineBin, "wineboot", "-u")
+	cmd.Dir = prefixPath
 
-	// Ждем завершения обновления префикса
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("ошибка при лечении префикса (wineboot): %w", err)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		slog.Error("wineboot завершился с ошибкой", "err", err, "out", string(out))
+		return fmt.Errorf("ошибка при лечении префикса (wineboot): %w\nВывод: %s", err, string(out))
 	}
+	slog.Info("wineboot успешно завершен", "out", string(out))
 
+	// =========================================================================
+	// 6. ИНЪЕКЦИЯ БИБЛИОТЕК И РЕЕСТР
+	// =========================================================================
+	slog.Info("Запуск InjectLibraries...")
 	injectedDlls, err := InjectLibraries(gameRoot)
 	if err != nil {
 		slog.Warn("Ошибка инъекции библиотек в system32", "err", err)
 	}
 
-	// Динамически прописываем скопированные DLL в реестр (чтобы Wine использовал native,builtin)
 	if len(injectedDlls) > 0 {
 		if err := ApplyRegistryOverrides(env, wineBin, injectedDlls); err != nil {
 			slog.Warn("Ошибка модификации реестра", "err", err)
 		}
 	}
 
-	slog.Info("Префикс успешно инициализирован и готов к запуску")
+	slog.Info("Префикс успешно инициализирован!")
 	return nil
 }
 
@@ -106,42 +161,21 @@ func InjectLibraries(gameRoot string) ([]string, error) {
 		srcFile := filepath.Join(libsDir, fileName)
 		dstFile := filepath.Join(system32Dir, fileName)
 
-		// Удаляем старую заглушку Wine
 		os.Remove(dstFile)
 
-		// Копируем файл
-		if err := copyFile(srcFile, dstFile); err != nil {
+		// Используем общую надежную функцию копирования
+		if err := utils.CopyFile(srcFile, dstFile); err != nil {
 			slog.Warn("Ошибка копирования файла", "file", fileName, "err", err)
 		} else {
-			// Отрезаем расширение (.dll) для записи в реестр
 			ext := filepath.Ext(fileName)
 			baseName := strings.TrimSuffix(fileName, ext)
 			injectedDlls = append(injectedDlls, baseName)
-
 			count++
 		}
 	}
 
 	slog.Info("Копирование библиотек успешно завершено", "скопировано_файлов", count)
 	return injectedDlls, nil
-}
-
-// Вспомогательная функция для копирования файлов
-func copyFile(src, dst string) error {
-	source, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer source.Close()
-
-	destination, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer destination.Close()
-
-	_, err = io.Copy(destination, source)
-	return err
 }
 
 func ApplyRegistryOverrides(env []string, wineBin string, dlls []string) error {
@@ -154,8 +188,8 @@ func ApplyRegistryOverrides(env []string, wineBin string, dlls []string) error {
 
 	for _, dll := range dlls {
 		// Заменили CommandContext на обычный Command
-		cmd := utils.NewHostCommand(env, wineBin, "reg", "add", 
-    		`HKEY_CURRENT_USER\Software\Wine\DllOverrides`, 
+		cmd := utils.NewHostCommand(env, wineBin, "reg", "add",
+			`HKEY_CURRENT_USER\Software\Wine\DllOverrides`,
 			"/v", dll, "/t", "REG_SZ", "/d", "native,builtin", "/f")
 
 		if err := cmd.Run(); err != nil {
