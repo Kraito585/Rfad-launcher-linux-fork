@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -19,7 +20,7 @@ var assets embed.FS
 //go:embed build/appicon.png
 var appIcon []byte
 
-var version = "2.1.0"
+var version = "dev"
 
 func init() {
 	os.Setenv("GDK_BACKEND", "wayland,x11")
@@ -63,6 +64,11 @@ func setupLogging() (*os.File, string) {
 }
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "-v" || os.Args[1] == "--version") {
+		fmt.Println(version)
+		os.Exit(0)
+	}
+
 	logFile, logPath := setupLogging()
 	if logFile != nil {
 		defer logFile.Close()

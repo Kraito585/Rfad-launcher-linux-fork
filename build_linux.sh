@@ -58,6 +58,32 @@ run_build() {
     export NUXT_TELEMETRY_DISABLED=1
     export CI=true
 
+    # Устанавливаем версию (фоллбэк на localbuild, если переменная пуста)
+    export APP_VERSION="${APP_VERSION:-localbuild}"
+
+    echo "=== 0. Настройка версионирования ==="
+    echo "Используемая версия: $APP_VERSION"
+    # 1. Инъекция в бинарник
+    if [ -f "main.go" ]; then
+        sed -i "s/var version = \".*\"/var version = \"$APP_VERSION\"/" main.go
+        echo "Файл main.go успешно обновлен."
+    fi
+
+    # 2. Инъекция в метаданные nFPM (заменяем любую версию на нашу)
+    if [ -f "build/linux/nfpm/nfpm.yaml" ]; then
+        sed -i -E "s/^[[:space:]]*version:.*/version: \"$APP_VERSION\"/" build/linux/nfpm/nfpm.yaml
+        echo "Файл nfpm.yaml успешно обновлен."
+    fi
+
+    # 3. Инъекция в ярлык для нативных пакетов (добавляем X-App-Version)
+    if [ -f "build/linux/RFADLauncherLinux.desktop" ]; then
+        # Удаляем старую строку X-App-Version (если была), чтобы не дублировать
+        sed -i '/^X-App-Version=/d' build/linux/RFADLauncherLinux.desktop
+        # Дописываем нашу актуальную версию в конец файла
+        echo "X-App-Version=$APP_VERSION" >> build/linux/RFADLauncherLinux.desktop
+        echo "Файл RFADLauncherLinux.desktop успешно обновлен."
+    fi
+
     echo "=== 1. Подготовка системы и базовых утилит ==="
     apt-get update -y
     apt-get install -y curl ca-certificates gnupg file build-essential pkg-config dbus dbus-x11
@@ -73,13 +99,13 @@ run_build() {
     apt-get install -y nodejs
 
     echo "=== 5. Установка Wails CLI ==="
-    go install github.com/wailsapp/wails/v3/cmd/wails3@latest
+    go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.24
     export PATH=$PATH:$(go env GOPATH)/bin
 
     echo "=== 6. Сборка нативных пакетов Wails (DEB, RPM, ZST) ==="
     unset GOFLAGS
     rm -rf bin/
-    # ИСПОЛЬЗУЕМ WATCHDOG ДЛЯ СБОРКИ WAILS
+    # Wails/nfpm подхватят переменную APP_VERSION автоматически
     run_with_watchdog "wails3 task linux:package"
     rm -f bin/*.AppImage
 
@@ -90,7 +116,8 @@ run_build() {
     flatpak install --user -y flathub org.gnome.Platform//46 org.gnome.Sdk//46 org.freedesktop.Sdk.Extension.golang//23.08
 
     echo "=== 8. Создание манифеста Flatpak ==="
-    cat << 'EOF' > io.rfad.Launcher.yml
+    # Используем cat << EOF (без кавычек), чтобы bash мог вставить переменную $APP_VERSION внутрь ярлыка
+    cat << EOF > io.rfad.Launcher.yml
 app-id: io.rfad.Launcher
 runtime: org.gnome.Platform
 runtime-version: '46'
@@ -136,6 +163,7 @@ modules:
         Icon=io.rfad.Launcher
         Type=Application
         Categories=Utility;Game;
+        X-App-Version=$APP_VERSION
         APP_EOF
     sources:
       - type: dir
@@ -143,7 +171,6 @@ modules:
 EOF
 
     echo "=== 9. Сборка Flatpak пакета ==="
-    # ИСПОЛЬЗУЕМ WATCHDOG ДЛЯ FLATPAK-BUILDER
     run_with_watchdog "flatpak-builder --user --disable-rofiles-fuse --force-clean flatpak-build io.rfad.Launcher.yml"
     
     flatpak build-export repo flatpak-build
@@ -154,13 +181,17 @@ EOF
 }
 
 # Логика изоляции
+export APP_VERSION="${APP_VERSION:-localbuild}"
+
 if [ "$1" == "--internal" ]; then
     run_build
 else
     echo "=== Поднятие Docker-песочницы для безопасной сборки ==="
     mkdir -p bin
     
+    # Пробрасываем APP_VERSION внутрь контейнера через флаг -e
     tar -cf - --exclude=bin . | docker run --rm -i --privileged --network host \
+      -e APP_VERSION="$APP_VERSION" \
       -v "$(pwd)/bin":/export \
       -w /app \
       golang:1.26-trixie \

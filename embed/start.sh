@@ -1,14 +1,177 @@
-#!/bin/bash
-# Запуск игры через Wine из Proton
+# #!/bin/bash
+# # Запуск игры через Wine из Proton
 
-# Базовые пути
+# # Базовые пути
+# GAME_ROOT="${GAME_ROOT:-}"
+# WINE_BIN="${WINE_BIN:-}"
+# EXE_PATH="${EXE_PATH:-}"
+# PREFIX_PATH="${PREFIX_PATH:-}"
+# MO2_ARGS="${MO2_ARGS:-}"
+
+# # Новые параметры (с дефолтными значениями)
+# WINEDLLOVERRIDES_PARAM="${WINEDLLOVERRIDES_PARAM:-concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b}"
+# ENABLE_NVAPI="${ENABLE_NVAPI:-false}"
+# ENABLE_HDR="${ENABLE_HDR:-false}"
+# ENABLE_FSR="${ENABLE_FSR:-false}"
+# ENABLE_GAMESCOPE="${ENABLE_GAMESCOPE:-false}"
+# ENABLE_MANGOHUD="${ENABLE_MANGOHUD:-false}"
+# ENABLE_SHADER_CACHE="${ENABLE_SHADER_CACHE:-true}"
+# USE_GAMEMODE="${USE_GAMEMODE:-false}"
+# STEAM_FIX_ENABLED="${STEAM_FIX_ENABLED:-false}"
+
+# if [ -z "$WINE_BIN" ] || [ -z "$EXE_PATH" ] || [ -z "$PREFIX_PATH" ]; then
+#     echo "Ошибка: не заданы обязательные пути"
+#     exit 1
+# fi
+
+# # === Проверка Steam (если Steam Fix включен) ===
+# if [ "$STEAM_FIX_ENABLED" = "true" ] || [ "$STEAM_FIX_ENABLED" = "1" ]; then
+#     echo "Steam Fix включен. Проверяем статус Steam..."
+    
+#     # Ищем процесс steam. Флаг -x ищет точное совпадение имени.
+#     if ! pgrep -x "steam" > /dev/null; then
+#         echo "Steam не запущен. Попытка фонового запуска..."
+        
+#         # Запускаем Steam полностью отвязанным от текущего скрипта
+#         nohup steam < /dev/null > /dev/null 2>&1 &
+        
+#         TIMEOUT=300
+#         ELAPSED=0
+#         STEAM_FOUND=false
+        
+#         echo "Ожидание процесса steam (до 5 минут)..."
+#         while [ $ELAPSED -lt $TIMEOUT ]; do
+#             if pgrep -x "steam" > /dev/null; then
+#                 STEAM_FOUND=true
+#                 echo "Процесс Steam успешно обнаружен в системе."
+#                 break
+#             fi
+#             sleep 2
+#             ELAPSED=$((ELAPSED + 2))
+#         done
+        
+#         if [ "$STEAM_FOUND" = "false" ]; then
+#             echo "Критическая ошибка: Процесс Steam не появился по истечении 5 минут. Отмена запуска игры."
+#             exit 1
+#         fi
+#     else
+#         echo "Steam уже работает."
+#     fi
+# fi
+
+# # Экспорт базовых переменных
+# export WINEPREFIX="$PREFIX_PATH"
+# export WINEDLLOVERRIDES="$WINEDLLOVERRIDES_PARAM"
+# export DXVK_ASYNC=1
+
+# export WINEDLLPATH="$WINEDLLPATH"
+# export LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
+# export PATH="$PATH"
+
+# # === Применение настроек из лаунчера ===
+
+# # NVAPI (для RTX 20+ серии)
+# if [ "$ENABLE_NVAPI" = "true" ] || [ "$ENABLE_NVAPI" = "1" ]; then
+#     export PROTON_ENABLE_NVAPI=1
+#     export DXVK_ENABLE_NVAPI=1
+# fi
+
+# # DXVK HDR
+# if [ "$ENABLE_HDR" = "true" ] || [ "$ENABLE_HDR" = "1" ]; then
+#     export DXVK_HDR=1
+# fi
+
+# # Wine Fullscreen FSR
+# if [ "$ENABLE_FSR" = "true" ] || [ "$ENABLE_FSR" = "1" ]; then
+#     export WINE_FULLSCREEN_FSR=1
+# fi
+
+# # Shader Cache (Кэш шейдеров)
+# if [ "$ENABLE_SHADER_CACHE" = "true" ] || [ "$ENABLE_SHADER_CACHE" = "1" ]; then
+#     export __GL_SHADER_DISK_CACHE=1
+#     export __GL_SHADER_DISK_CACHE_PATH="$PREFIX_PATH/shadercache"
+#     export DXVK_STATE_CACHE=1
+#     export DXVK_STATE_CACHE_PATH="$PREFIX_PATH/shadercache"
+# else
+#     export __GL_SHADER_DISK_CACHE=0
+#     export DXVK_STATE_CACHE=0
+# fi
+
+# # Переход в папку с игрой/MO2
+# cd "$(dirname "$EXE_PATH")" || exit
+
+# if [ ! -x "$WINE_BIN" ]; then
+#     echo "Ошибка: wine не найден в $WINE_BIN"
+#     exit 1
+# fi
+
+# # === Формирование цепочки запуска (Prefixing) ===
+# EXEC_CMD=""
+
+# if [ "$USE_GAMEMODE" = "true" ] || [ "$USE_GAMEMODE" = "1" ]; then
+#     if command -v gamemoderun &>/dev/null; then
+#         EXEC_CMD="gamemoderun"
+#     else
+#         echo "Внимание: gamemoderun не установлен, пропускаем."
+#     fi
+# fi
+
+# if [ "$ENABLE_MANGOHUD" = "true" ] || [ "$ENABLE_MANGOHUD" = "1" ]; then
+#     if command -v mangohud &>/dev/null; then
+#         if [ -z "$EXEC_CMD" ]; then
+#             EXEC_CMD="mangohud"
+#         else
+#             EXEC_CMD="$EXEC_CMD mangohud"
+#         fi
+#     else
+#         echo "Внимание: mangohud не установлен, пропускаем."
+#     fi
+# fi
+
+# # === Gamescope ===
+# if [ "$ENABLE_GAMESCOPE" = "true" ] || [ "$ENABLE_GAMESCOPE" = "1" ]; then
+#     if command -v gamescope &>/dev/null; then
+#         # Флаг -f (fullscreen), -e (Steam integration)
+#         GAMESCOPE_CMD="gamescope -f --"
+        
+#         if [ -z "$EXEC_CMD" ]; then
+#             EXEC_CMD="$GAMESCOPE_CMD"
+#         else
+#             # Добавляем в самое начало цепочки
+#             EXEC_CMD="$GAMESCOPE_CMD $EXEC_CMD"
+#         fi
+#         echo "Gamescope активирован."
+#     else
+#         echo "Внимание: gamescope запрошен, но не установлен в системе, пропускаем."
+#     fi
+# fi
+
+# # === Финальный запуск ===
+# if [ -n "$EXEC_CMD" ]; then
+#     exec $EXEC_CMD "$WINE_BIN" "$EXE_PATH" $MO2_ARGS
+# else
+#     exec "$WINE_BIN" "$EXE_PATH" $MO2_ARGS
+# fi
+
+
+#!/bin/bash
+# Запуск игры через Wine из Proton (GE-Proton 11 Ready)
+
+# Базовые пути (передаются из Go)
 GAME_ROOT="${GAME_ROOT:-}"
 WINE_BIN="${WINE_BIN:-}"
 EXE_PATH="${EXE_PATH:-}"
 PREFIX_PATH="${PREFIX_PATH:-}"
 MO2_ARGS="${MO2_ARGS:-}"
 
+# Критически важные переменные Proton (передаются из Go)
+WINEDLLPATH="${WINEDLLPATH:-}"
+WINEDATADIR="${WINEDATADIR:-}"
+WINESERVER="${WINESERVER:-}"
+LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
+
 # Новые параметры (с дефолтными значениями)
+# Обратите внимание: mscoree=n (Native) здесь критически важен для работы .NET 4.8 / 6.0
 WINEDLLOVERRIDES_PARAM="${WINEDLLOVERRIDES_PARAM:-concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b}"
 ENABLE_NVAPI="${ENABLE_NVAPI:-false}"
 ENABLE_HDR="${ENABLE_HDR:-false}"
@@ -28,11 +191,8 @@ fi
 if [ "$STEAM_FIX_ENABLED" = "true" ] || [ "$STEAM_FIX_ENABLED" = "1" ]; then
     echo "Steam Fix включен. Проверяем статус Steam..."
     
-    # Ищем процесс steam. Флаг -x ищет точное совпадение имени.
     if ! pgrep -x "steam" > /dev/null; then
         echo "Steam не запущен. Попытка фонового запуска..."
-        
-        # Запускаем Steam полностью отвязанным от текущего скрипта
         nohup steam < /dev/null > /dev/null 2>&1 &
         
         TIMEOUT=300
@@ -59,14 +219,19 @@ if [ "$STEAM_FIX_ENABLED" = "true" ] || [ "$STEAM_FIX_ENABLED" = "1" ]; then
     fi
 fi
 
-# Экспорт базовых переменных
+# === ЗОЛОТОЙ СТАНДАРТ ОКРУЖЕНИЯ WINE ===
 export WINEPREFIX="$PREFIX_PATH"
 export WINEDLLOVERRIDES="$WINEDLLOVERRIDES_PARAM"
-export DXVK_ASYNC=1
+export WINEARCH="win64"
 
+# Обязательные пути для GE-Proton 11
 export WINEDLLPATH="$WINEDLLPATH"
+export WINEDATADIR="$WINEDATADIR"
+export WINESERVER="$WINESERVER"
 export LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
 export PATH="$PATH"
+
+export DXVK_ASYNC=1
 
 # === Применение настроек из лаунчера ===
 
@@ -97,11 +262,11 @@ else
     export DXVK_STATE_CACHE=0
 fi
 
-# Переход в папку с игрой/MO2
+# Переход в рабочую папку игры/MO2
 cd "$(dirname "$EXE_PATH")" || exit
 
 if [ ! -x "$WINE_BIN" ]; then
-    echo "Ошибка: wine не найден в $WINE_BIN"
+    echo "Ошибка: wine не найден или не исполняем по пути $WINE_BIN"
     exit 1
 fi
 
@@ -131,13 +296,10 @@ fi
 # === Gamescope ===
 if [ "$ENABLE_GAMESCOPE" = "true" ] || [ "$ENABLE_GAMESCOPE" = "1" ]; then
     if command -v gamescope &>/dev/null; then
-        # Флаг -f (fullscreen), -e (Steam integration)
         GAMESCOPE_CMD="gamescope -f --"
-        
         if [ -z "$EXEC_CMD" ]; then
             EXEC_CMD="$GAMESCOPE_CMD"
         else
-            # Добавляем в самое начало цепочки
             EXEC_CMD="$GAMESCOPE_CMD $EXEC_CMD"
         fi
         echo "Gamescope активирован."
@@ -147,8 +309,10 @@ if [ "$ENABLE_GAMESCOPE" = "true" ] || [ "$ENABLE_GAMESCOPE" = "1" ]; then
 fi
 
 # === Финальный запуск ===
+echo "Запуск игры. Команда: $EXEC_CMD $WINE_BIN $(basename "$EXE_PATH") $MO2_ARGS"
 if [ -n "$EXEC_CMD" ]; then
-    exec $EXEC_CMD "$WINE_BIN" "$EXE_PATH" $MO2_ARGS
+    # Используем eval, чтобы gamescope с его флагами корректно распарсился
+    eval exec $EXEC_CMD "\"$WINE_BIN\"" "\"$EXE_PATH\"" $MO2_ARGS
 else
     exec "$WINE_BIN" "$EXE_PATH" $MO2_ARGS
 fi

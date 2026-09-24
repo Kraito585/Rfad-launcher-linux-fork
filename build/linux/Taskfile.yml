@@ -154,6 +154,8 @@ tasks:
     summary: Creates a deb package
     cmds:
       - wails3 tool package -name "{{.APP_NAME}}" -format deb -config ./build/linux/nfpm/nfpm.yaml -out {{.ROOT_DIR}}/bin
+    env:
+      APP_VERSION: "{{.APP_VERSION}}"
 
   generate:rpm:
     summary: Creates a rpm package
