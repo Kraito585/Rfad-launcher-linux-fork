@@ -114,15 +114,15 @@ steps:
 
   publish-gemfury:
     image: curlimages/curl:latest
+    commands:
+      - echo "Загрузка DEB и RPM в Gemfury..."
+      - curl -f -F package=@bin/RFADLauncherLinux.deb https://${GEMFURY_TOKEN}@push.fury.io/${GEMFURY_USER}/
+      - curl -f -F package=@bin/RFADLauncherLinux.rpm https://${GEMFURY_TOKEN}@push.fury.io/${GEMFURY_USER}/
     environment:
       GEMFURY_TOKEN:
         from_secret: gemfury_token
       GEMFURY_USER:
         from_secret: gemfury_user
-    commands:
-      - echo "Загрузка DEB и RPM в Gemfury..."
-      - curl -f -F package=@bin/RFADLauncherLinux.deb https://${GEMFURY_TOKEN}@push.fury.io/${GEMFURY_USER}/
-      - curl -f -F package=@bin/RFADLauncherLinux.rpm https://${GEMFURY_TOKEN}@push.fury.io/${GEMFURY_USER}/
     when:
       - event: tag
   # ==========================================
@@ -131,9 +131,6 @@ steps:
 
   publish-flatpak-repo:
     image: ubuntu:24.04
-    environment:
-      GH_TOKEN:
-        from_secret: github_token
     commands:
       - apt-get update && apt-get install -y git flatpak ostree
       - git config --global user.email "ci-bot@rfad.local"
@@ -161,6 +158,9 @@ steps:
       - git add repo/
       - git commit -m "Deploy Flatpak update ${CI_COMMIT_TAG}" || echo "Нет изменений для коммита"
       - git push origin gh-pages
+    environment:
+      GH_TOKEN:
+        from_secret: github_token
     when:
       - event: tag
 
