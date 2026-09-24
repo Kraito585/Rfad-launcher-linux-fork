@@ -114,15 +114,13 @@ steps:
 
   publish-gemfury:
     image: curlimages/curl:latest
-    environment:
-      FURY_TOKEN:
-        from_secret: gemfury_token
-      FURY_USER:
-        from_secret: gemfury_user
+    secrets:
+      - gemfury_token
+      - gemfury_user
     commands:
       - echo "Загрузка DEB и RPM в Gemfury..."
-      - curl -F package=@bin/RFADLauncherLinux.deb https://${FURY_TOKEN}@push.fury.io/${FURY_USER}/
-      - curl -F package=@bin/RFADLauncherLinux.rpm https://${FURY_TOKEN}@push.fury.io/${FURY_USER}/
+      - curl -f -F package=@bin/RFADLauncherLinux.deb https://${GEMFURY_TOKEN}@push.fury.io/${GEMFURY_USER}/
+      - curl -f -F package=@bin/RFADLauncherLinux.rpm https://${GEMFURY_TOKEN}@push.fury.io/${GEMFURY_USER}/
     when:
       - event: tag
   # ==========================================
