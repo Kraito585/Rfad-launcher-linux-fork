@@ -151,9 +151,9 @@ steps:
         echo "=> Генерация APT репозитория..."
         mkdir -p package/apt/pool/main package/apt/dists/stable/main/binary-amd64
         cp ../bin/RFADLauncherLinux.deb package/apt/pool/main/
-        ls -la package/apt/pool/main/
         cd package/apt
-        dpkg-scanpackages -m pool/ > dists/stable/main/binary-amd64/Packages
+        # Используем пуленепробиваемый синтаксис для сканирования пакетов
+        dpkg-scanpackages pool/ /dev/null > dists/stable/main/binary-amd64/Packages
         gzip -k -f dists/stable/main/binary-amd64/Packages
         echo "Architectures: amd64" > dists/stable/Release
         echo "Components: main" >> dists/stable/Release
