@@ -114,12 +114,13 @@ steps:
 
   publish-gh-pages-repos:
     image: ubuntu:24.04
-    secrets:
-      - github_token
+    environment:
+      GH_TOKEN:
+        from_secret: github_token
     commands:
       - echo "=== Проверка токена GitHub ==="
       - |
-        if [ -z "$GITHUB_TOKEN" ]; then
+        if [ -z "$$GH_TOKEN" ]; then
           echo "КРИТИЧЕСКАЯ ОШИБКА: Токен GitHub не передан!"
           exit 1
         fi
@@ -133,11 +134,11 @@ steps:
 
       # Клонируем ветку с чистым форматом авторизации
       - echo "=> Клонирование репозитория..."
-      - git clone https://${GITHUB_TOKEN}@github.com/${CI_REPO}.git gh-pages-repo
+      - git clone https://$${GH_TOKEN}@github.com/$${CI_REPO}.git gh-pages-repo
       - cd gh-pages-repo
 
       # Жестко фиксируем URL с токеном для отправки (чтобы git его не потерял)
-      - git remote set-url origin https://${GITHUB_TOKEN}@github.com/${CI_REPO}.git
+      - git remote set-url origin https://$${GH_TOKEN}@github.com/$${CI_REPO}.git
 
       - |
         if git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
