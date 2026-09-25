@@ -138,15 +138,9 @@ steps:
       - cd gh-pages-repo
 
       # Жестко фиксируем URL с токеном для отправки (чтобы git его не потерял)
-      - git remote set-url origin https://$${GH_TOKEN}@github.com/$${CI_REPO}.git
+      - git remote set-url origin https://${GH_TOKEN}@github.com/${CI_REPO}.git
 
-      - |
-        if git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
-          git checkout gh-pages
-        else
-          git checkout --orphan gh-pages
-          git rm -rf .
-        fi
+      - if git show-ref --verify --quiet refs/remotes/origin/gh-pages; then git checkout gh-pages; else git checkout --orphan gh-pages; git rm -rf .; fi
 
       - mkdir -p package
 
@@ -154,16 +148,16 @@ steps:
       - echo "=> Генерация APT репозитория..."
       - mkdir -p package/apt/pool/main package/apt/dists/stable/main/binary-amd64
       - cp ../bin/RFADLauncherLinux.deb package/apt/pool/main/
+      - ls -la package/apt/pool/main/ # Отладочный вывод
       - cd package/apt
-      - dpkg-scanpackages --arch amd64 pool/ > dists/stable/main/binary-amd64/Packages
+      - dpkg-scanpackages -m pool/ > dists/stable/main/binary-amd64/Packages
       - gzip -k -f dists/stable/main/binary-amd64/Packages
-      - |
-        cat <<EOF > dists/stable/Release
-        Architectures: amd64
-        Components: main
-        Codename: stable
-        EOF
+      # Безопасная запись Release файла (без heredoc)
+      - echo "Architectures: amd64" > dists/stable/Release
+      - echo "Components: main" >> dists/stable/Release
+      - echo "Codename: stable" >> dists/stable/Release
       - cd ../..
+
       # --- 2. RPM Репозиторий ---
       - echo "=> Генерация RPM репозитория..."
       - mkdir -p package/rpm
@@ -174,7 +168,10 @@ steps:
       - echo "=> Генерация Pacman репозитория..."
       - mkdir -p package/pacman/x86_64
       - cp ../bin/RFADLauncherLinux.pkg.tar.zst package/pacman/x86_64/
-      - repo-add package/pacman/x86_64/rfad.db.tar.gz package/pacman/x86_64/RFADLauncherLinux.pkg.tar.zst
+      - cd package/pacman/x86_64
+      # Явный запуск через bash внутри папки
+      - /bin/bash /usr/bin/repo-add rfad.db.tar.gz RFADLauncherLinux.pkg.tar.zst
+      - cd ../../..
 
       # --- 4. Flatpak OSTree Репозиторий ---
       - echo "=> Генерация Flatpak репозитория..."
