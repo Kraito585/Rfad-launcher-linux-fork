@@ -119,12 +119,12 @@ steps:
         from_secret: github_token
     commands:
       - |
+        set -e # Скрипт мгновенно остановится при любой ошибке
         echo "=== Проверка токена GitHub ==="
         if [ -z "$GH_TOKEN" ]; then
           echo "КРИТИЧЕСКАЯ ОШИБКА: Токен GitHub не передан!"
           exit 1
         fi
-        echo "Токен успешно получен."
 
         apt-get update
         apt-get install -y git dpkg-dev createrepo-c flatpak ostree pacman-package-manager zstd libarchive-tools
@@ -149,13 +149,15 @@ steps:
         echo "=> Генерация APT репозитория..."
         mkdir -p package/apt/pool/main package/apt/dists/stable/main/binary-amd64
         cp ../bin/RFADLauncherLinux.deb package/apt/pool/main/
-        cd package/apt
-        dpkg-scanpackages pool/ /dev/null > dists/stable/main/binary-amd64/Packages
-        gzip -k -f dists/stable/main/binary-amd64/Packages
-        echo "Architectures: amd64" > dists/stable/Release
-        echo "Components: main" >> dists/stable/Release
-        echo "Codename: stable" >> dists/stable/Release
-        cd ../..
+        # Изолируем cd в () чтобы не сломать пути для остальных шагов
+        (
+          cd package/apt
+          dpkg-scanpackages pool/ /dev/null > dists/stable/main/binary-amd64/Packages
+          gzip -k -f dists/stable/main/binary-amd64/Packages
+          echo "Architectures: amd64" > dists/stable/Release
+          echo "Components: main" >> dists/stable/Release
+          echo "Codename: stable" >> dists/stable/Release
+        )
 
         # --- 2. RPM Репозиторий ---
         echo "=> Генерация RPM репозитория..."
@@ -167,9 +169,10 @@ steps:
         echo "=> Генерация Pacman репозитория..."
         mkdir -p package/pacman/x86_64
         cp ../bin/RFADLauncherLinux.pkg.tar.zst package/pacman/x86_64/
-        cd package/pacman/x86_64
-        /bin/bash /usr/bin/repo-add rfad.db.tar.gz RFADLauncherLinux.pkg.tar.zst
-        cd ../../..
+        (
+          cd package/pacman/x86_64
+          /bin/bash /usr/bin/repo-add rfad.db.tar.gz RFADLauncherLinux.pkg.tar.zst
+        )
 
         # --- 4. Flatpak OSTree Репозиторий ---
         echo "=> Генерация Flatpak репозитория..."
