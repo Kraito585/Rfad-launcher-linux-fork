@@ -133,7 +133,7 @@ steps:
         git config --global user.name "CI Bot"
 
         echo "=> Клонирование репозитория..."
-        git clone https://${GH_TOKEN}@github.com/${CI_REPO}.git gh-pages-repo
+        git clone https://github.com/${CI_REPO}.git gh-pages-repo
         cd gh-pages-repo
 
         if git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
@@ -185,10 +185,15 @@ steps:
         git add package/
         git commit -m "Update Repositories for ${CI_COMMIT_TAG}" || echo "Нет изменений для коммита"
 
-        # Настраиваем безопасную авторизацию через HTTP заголовок
-        git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $(echo -n x-access-token:${GH_TOKEN} | base64 | tr -d '\n')"
-        export GIT_TERMINAL_PROMPT=0
+        # Авторизация через .netrc
+        cat <<EOF > ~/.netrc
+        machine github.com
+        login x-access-token
+        password ${GH_TOKEN}
+        EOF
+        chmod 600 ~/.netrc
 
+        export GIT_TERMINAL_PROMPT=0
         git remote set-url origin https://github.com/${CI_REPO}.git
         git push origin gh-pages
     when:
