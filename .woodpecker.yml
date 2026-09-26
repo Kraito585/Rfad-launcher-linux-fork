@@ -85,9 +85,9 @@ steps:
   generate-aur-pkgbuild:
     image: alpine:latest
     commands:
-      - apk add --no-cache coreutils
-      - DEB_SHA=$(sha256sum bin/RFADLauncherLinux.deb | awk '{print $1}')
+      - apk add --no-cache coreutils curl
       - VERSION=${CI_COMMIT_TAG#v}
+      - ZST_SHA=$(curl -sL "https://github.com/$CI_REPO/releases/download/${CI_COMMIT_TAG}/RFADLauncherLinux.pkg.tar.zst" | sha256sum | awk '{print $1}')
       - |
         cat <<EOF > bin/PKGBUILD
         pkgname=rfad-launcher-bin
@@ -97,18 +97,18 @@ steps:
         arch=('x86_64')
         url="${CI_REPO_URL:-https://github.com/$CI_REPO}"
         license=('MIT')
-        depends=('gtk4' 'webkitgtk-6.0')
         provides=('rfad-launcher')
         conflicts=('rfad-launcher')
-        source=("https://github.com/$CI_REPO/releases/download/${CI_COMMIT_TAG}/RFADLauncherLinux.deb")
-        sha256sums=('${DEB_SHA}')
+        source=("https://github.com/$CI_REPO/releases/download/${CI_COMMIT_TAG}/RFADLauncherLinux.pkg.tar.zst")
+        sha256sums=('${ZST_SHA}')
 
         package() {
-            # makepkg автоматически распакует .deb архив, останется распаковать данные
-            tar -xf data.tar.* -C "\${pkgdir}"
+            # makepkg автоматически распакует .zst архив, нам остается только скопировать файлы
+            cp -r "\${srcdir}/usr" "\${pkgdir}/"
+            cp -r "\${srcdir}/opt" "\${pkgdir}/" 2>/dev/null || true
         }
         EOF
-      - echo "PKGBUILD для версии $VERSION успешно сгенерирован!"
+      - echo "PKGBUILD успешно сгенерирован!"
     when:
       - event: tag
 
@@ -127,7 +127,7 @@ steps:
         fi
 
         apt-get update
-        apt-get install -y git dpkg-dev createrepo-c flatpak ostree pacman-package-manager zstd libarchive-tools
+        apt-get install -y git dpkg-dev apt-utils createrepo-c flatpak ostree pacman-package-manager zstd libarchive-tools
 
         git config --global user.email "ci-bot@rfad.local"
         git config --global user.name "CI Bot"
@@ -149,14 +149,22 @@ steps:
         echo "=> Генерация APT репозитория..."
         mkdir -p package/apt/pool/main package/apt/dists/stable/main/binary-amd64
         cp ../bin/RFADLauncherLinux.deb package/apt/pool/main/
-        # Изолируем cd в () чтобы не сломать пути для остальных шагов
         (
           cd package/apt
-          dpkg-scanpackages pool/ /dev/null > dists/stable/main/binary-amd64/Packages
+          # apt-ftparchive сам сгенерирует правильный файл Packages с контрольными суммами
+          apt-ftparchive packages pool/main > dists/stable/main/binary-amd64/Packages
           gzip -k -f dists/stable/main/binary-amd64/Packages
-          echo "Architectures: amd64" > dists/stable/Release
-          echo "Components: main" >> dists/stable/Release
-          echo "Codename: stable" >> dists/stable/Release
+          
+          # Создаем базовый конфиг для Release
+          cat <<EOF > apt-release.conf
+          APT::FTPArchive::Release::Codename "stable";
+          APT::FTPArchive::Release::Components "main";
+          APT::FTPArchive::Release::Architectures "amd64";
+          EOF
+          
+          # Генерируем полноценный Release файл с хешами
+          apt-ftparchive -c apt-release.conf release dists/stable > dists/stable/Release
+          rm apt-release.conf
         )
 
         # --- 2. RPM Репозиторий ---
@@ -183,22 +191,24 @@ steps:
         flatpak build-import-bundle package/repo ../bin/RFADLauncherLinux-x86_64.flatpak
         flatpak build-update-repo package/repo
 
+        cat <<EOF > package/repo/rfad-launcher.flatpakrepo
+        [Flatpak Repo]
+        Title=RFAD Launcher
+        Url=https://kraito585.github.io/Rfad-launcher-linux-fork/package/repo/
+        Homepage=https://github.com/Kraito585/Rfad-launcher-linux-fork
+        IsSubset=false
+        EOF
+
         # --- Финализация и отправка на GitHub ---
         echo "=> Отправка обновленных репозиториев на GitHub Pages..."
         git add package/
         git commit -m "Update Repositories for ${CI_COMMIT_TAG}" || echo "Нет изменений для коммита"
 
-        # Авторизация через .netrc
-        cat <<EOF > ~/.netrc
-        machine github.com
-        login x-access-token
-        password ${GH_TOKEN}
-        EOF
-        chmod 600 ~/.netrc
-
+        # Отключаем любые попытки Git запросить пароль в консоли
         export GIT_TERMINAL_PROMPT=0
-        git remote set-url origin https://github.com/${CI_REPO}.git
-        git push origin gh-pages
+
+        # Выполняем прямой пуш, жестко внедряя токен прямо в URL команды
+        git push https://x-access-token:${GH_TOKEN}@github.com/${CI_REPO}.git gh-pages
     when:
       - event: tag
 

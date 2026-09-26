@@ -34,7 +34,7 @@ run_with_watchdog() {
             fi
         done
         
-        wait $cmd_pid 2>/dev/null || true
+        wait $cmd_pid 2>/dev/null
         local exit_code=$?
         
         if [ $timeout_triggered -eq 0 ] && [ $exit_code -eq 0 ]; then
@@ -59,6 +59,7 @@ run_build() {
     export CI=true
 
     # Устанавливаем версию (фоллбэк на localbuild, если переменная пуста)
+    export APP_VERSION="${APP_VERSION#v}"
     export APP_VERSION="${APP_VERSION:-localbuild}"
 
     echo "=== 0. Настройка версионирования ==="
@@ -181,6 +182,7 @@ EOF
 }
 
 # Логика изоляции
+export APP_VERSION="${APP_VERSION#v}"
 export APP_VERSION="${APP_VERSION:-localbuild}"
 
 if [ "$1" == "--internal" ]; then
