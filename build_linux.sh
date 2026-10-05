@@ -18,14 +18,12 @@ run_with_watchdog() {
         
         while kill -0 $cmd_pid 2>/dev/null; do
             sleep 5
-            # Получаем Unix timestamp последнего изменения лог-файла
             local last_mod=$(stat -c %Y "$log_file" 2>/dev/null || echo $(date +%s))
             local current_time=$(date +%s)
             local diff=$((current_time - last_mod))
             
             if [ $diff -ge $idle_timeout ]; then
                 echo "!!! ВНИМАНИЕ: Обнаружено зависание (нет вывода $idle_timeout сек). Прерывание..."
-                # Жестко убиваем сам процесс и все возможные зависшие дочерние утилиты
                 kill -9 $cmd_pid 2>/dev/null || true
                 pkill -9 -P $cmd_pid 2>/dev/null || true
                 pkill -9 -f "node|npm|npx|wails3|go|flatpak-builder" 2>/dev/null || true
@@ -34,8 +32,8 @@ run_with_watchdog() {
             fi
         done
         
-        wait $cmd_pid 2>/dev/null
-        local exit_code=$?
+        local exit_code=0
+        wait $cmd_pid 2>/dev/null || exit_code=$?
         
         if [ $timeout_triggered -eq 0 ] && [ $exit_code -eq 0 ]; then
             rm -f "$log_file"
@@ -58,29 +56,27 @@ run_build() {
     export NUXT_TELEMETRY_DISABLED=1
     export CI=true
 
-    # Устанавливаем версию (фоллбэк на localbuild, если переменная пуста)
+    # Устанавливаем версию (фоллбэк на динамический localbuild, если переменная пуста)
     export APP_VERSION="${APP_VERSION#v}"
-    export APP_VERSION="${APP_VERSION:-localbuild}"
+    if [ -z "$APP_VERSION" ] || [[ "$APP_VERSION" == localbuild* ]]; then
+        export APP_VERSION="localbuild.$(date +%m.%d.%H)"
+    fi
 
     echo "=== 0. Настройка версионирования ==="
     echo "Используемая версия: $APP_VERSION"
-    # 1. Инъекция в бинарник
+    
     if [ -f "main.go" ]; then
         sed -i "s/var version = \".*\"/var version = \"$APP_VERSION\"/" main.go
         echo "Файл main.go успешно обновлен."
     fi
 
-    # 2. Инъекция в метаданные nFPM (заменяем любую версию на нашу)
     if [ -f "build/linux/nfpm/nfpm.yaml" ]; then
         sed -i -E "s/^[[:space:]]*version:.*/version: \"$APP_VERSION\"/" build/linux/nfpm/nfpm.yaml
         echo "Файл nfpm.yaml успешно обновлен."
     fi
 
-    # 3. Инъекция в ярлык для нативных пакетов (добавляем X-App-Version)
     if [ -f "build/linux/RFADLauncherLinux.desktop" ]; then
-        # Удаляем старую строку X-App-Version (если была), чтобы не дублировать
         sed -i '/^X-App-Version=/d' build/linux/RFADLauncherLinux.desktop
-        # Дописываем нашу актуальную версию в конец файла
         echo "X-App-Version=$APP_VERSION" >> build/linux/RFADLauncherLinux.desktop
         echo "Файл RFADLauncherLinux.desktop успешно обновлен."
     fi
@@ -100,13 +96,32 @@ run_build() {
     apt-get install -y nodejs
 
     echo "=== 5. Установка Wails CLI ==="
-    go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.24
+    local wails_attempt=1
+    local wails_max_retries=5
+    
+    while [ $wails_attempt -le $wails_max_retries ]; do
+        echo "=> Загрузка Wails (Попытка $wails_attempt/$wails_max_retries)..."
+        # Версия обновлена до beta.27 согласно вашему логу
+        if go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.27; then
+            echo "Wails CLI успешно установлен!"
+            break
+        fi
+        
+        echo "Сбой загрузки (обрыв соединения). Ожидание 5 секунд перед повтором..."
+        sleep 5
+        wails_attempt=$((wails_attempt + 1))
+    done
+
+    if [ $wails_attempt -gt $wails_max_retries ]; then
+        echo "КРИТИЧЕСКАЯ ОШИБКА: Не удалось установить Wails CLI после $wails_max_retries попыток."
+        exit 1
+    fi
+    
     export PATH=$PATH:$(go env GOPATH)/bin
 
     echo "=== 6. Сборка нативных пакетов Wails (DEB, RPM, ZST) ==="
     unset GOFLAGS
     rm -rf bin/
-    # Wails/nfpm подхватят переменную APP_VERSION автоматически
     run_with_watchdog "wails3 task linux:package"
     rm -f bin/*.AppImage
 
@@ -117,7 +132,6 @@ run_build() {
     flatpak install --user -y flathub org.gnome.Platform//46 org.gnome.Sdk//46 org.freedesktop.Sdk.Extension.golang//23.08
 
     echo "=== 8. Создание манифеста Flatpak ==="
-    # Используем cat << EOF (без кавычек), чтобы bash мог вставить переменную $APP_VERSION внутрь ярлыка
     cat << EOF > io.rfad.Launcher.yml
 app-id: io.rfad.Launcher
 runtime: org.gnome.Platform
@@ -183,7 +197,9 @@ EOF
 
 # Логика изоляции
 export APP_VERSION="${APP_VERSION#v}"
-export APP_VERSION="${APP_VERSION:-localbuild}"
+if [ -z "$APP_VERSION" ] || [[ "$APP_VERSION" == localbuild* ]]; then
+    export APP_VERSION="localbuild.$(date +%m.%d.%H)"
+fi
 
 if [ "$1" == "--internal" ]; then
     run_build
@@ -191,7 +207,6 @@ else
     echo "=== Поднятие Docker-песочницы для безопасной сборки ==="
     mkdir -p bin
     
-    # Пробрасываем APP_VERSION внутрь контейнера через флаг -e
     tar -cf - --exclude=bin . | docker run --rm -i --privileged --network host \
       -e APP_VERSION="$APP_VERSION" \
       -v "$(pwd)/bin":/export \
