@@ -353,13 +353,14 @@ const (
 	CommunityShaderUpsacleURL string = "https://github.com/community-shaders/skyrim-community-shaders/releases/download/v1.8.4/Upscaling-2026-08-26T23-47Z.zip"
 	GEProtonUrl               string = "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-6/GE-Proton11-6-x86_64.tar.gz"
 	DotNet6Url                string = "https://aka.ms/dotnet/6.0/windowsdesktop-runtime-win-x64.exe"
+	DotNet48Url               string = "https://dotnet.microsoft.com/en-us/download/dotnet-framework/thank-you/net48-offline-installer"
+	VCRedist2022x64Url        string = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+	VCRedist2022x86Url        string = "https://aka.ms/vs/17/release/vc_redist.x86.exe"
+	VCRedist2013x64Url        string = "https://aka.ms/highdpimfc2013x64enu"
+	VCRedist2012x64Url        string = "https://download.microsoft.com/download/1/6/B/16B06F60-3B20-4FF2-B699-5E9B7962F9AE/VSU_4/vcredist_x64.exe"
+	VCRedist2010x64Url        string = "https://download.microsoft.com/download/1/6/5/165255E7-1014-4D0A-B094-B6A430A6BFFC/vcredist_x64.exe"
 	// Надобности в них не было оставлю на всякий
 	// InnoExtract            string = "https://github.com/dscharrer/innoextract/releases/download/1.9/innoextract-1.9-linux.tar.xz" unused
-	// VCRedist2022x64Url     string = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-	// VCRedist2022x86Url     string = "https://aka.ms/vs/17/release/vc_redist.x86.exe"
-	// VCRedist2013x64Url     string = "https://aka.ms/highdpimfc2013x64enu"
-	// VCRedist2012x64Url     string = "https://download.microsoft.com/download/1/6/B/16B06F60-3B20-4FF2-B699-5E9B7962F9AE/VSU_4/vcredist_x64.exe"
-	// VCRedist2010x64Url     string = "https://download.microsoft.com/download/1/6/5/165255E7-1014-4D0A-B094-B6A430A6BFFC/vcredist_x64.exe"
 )
 
 func alreadyDownloaded(destDir, key string) bool {
@@ -511,6 +512,22 @@ func DownloadGEProton(gameRoot string, forceDownload bool, progressCb func(float
 	return nil
 }
 
+func DownloadPrefix(gameRoot string, forceDownload bool, progressCb func(float64, float64, string)) error {
+	destDir := filepath.Join(gameRoot, "download")
+	key := "prefix"
+	if !alreadyDownloaded(destDir, key) || forceDownload {
+		removeDownloadedFiles(destDir, key)
+		var path string
+		path, err := DownloadYandex(YandexPrefixURL, destDir, "pfx dotnet.7z", progressCb)
+		if err != nil {
+			return fmt.Errorf("ошибка загрузки префикса с Яндекс.Диска: %w", err)
+		}
+		return RewriteStatus(destDir, key, path)
+	}
+
+	return nil
+}
+
 func DownloadCommunityShaders(gameRoot string, forceDownload bool, progressCb func(float64, float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 	key1 := "Community"
@@ -532,61 +549,6 @@ func DownloadCommunityShaders(gameRoot string, forceDownload bool, progressCb fu
 			return fmt.Errorf("ошибка получения префикса wine попробуйте использовать google drive %s", err)
 		}
 		return RewriteStatus(destDir, key2, path)
-	}
-
-	return nil
-}
-
-func DownloadRedists(gameRoot string, forceDownload bool, progressCb func(float64, float64, string)) error {
-	destDir := filepath.Join(gameRoot, "download")
-	key := "redists"
-
-	if !alreadyDownloaded(destDir, key) || forceDownload {
-		removeDownloadedFiles(destDir, key)
-
-		var downloadedPaths []string
-
-		// Связываем URL с уникальным именем файла, чтобы избежать перезаписи
-		redists := []struct {
-			Name string
-			URL  string
-		}{
-			// Надобности в них не было оставлю на всякий
-			// {"vcredist_2010_x64.exe", VCRedist2010x64Url},
-			// {"vcredist_2012_x64.exe", VCRedist2012x64Url},
-			// {"vcredist_2013_x64.exe", VCRedist2013x64Url},
-			// {"vcredist_2022_x86.exe", VCRedist2022x86Url},
-			// {"vcredist_2022_x64.exe", VCRedist2022x64Url},
-			{"dotnet_6_x64.exe", DotNet6Url},
-		}
-
-		for i, red := range redists {
-			stepProgress := float64(i) / float64(len(redists))
-
-			// Функция скачивает файл под тем именем, которое отдает сервер
-			originalPath, err := DownloadURL(red.URL, destDir, func(p float64, _ float64, msg string) {
-				if progressCb != nil {
-					overallProgress := stepProgress + (p / float64(len(redists)))
-					progressCb(overallProgress, 0, fmt.Sprintf("Библиотеки (%d/%d): %s", i+1, len(redists), msg))
-				}
-			})
-
-			if err != nil {
-				return fmt.Errorf("ошибка загрузки %s: %w", red.Name, err)
-			}
-
-			// Сразу переименовываем скачанный файл в наше уникальное имя
-			newPath := filepath.Join(destDir, red.Name)
-			if err := os.Rename(originalPath, newPath); err != nil {
-				return fmt.Errorf("ошибка переименования файла %s -> %s: %w", originalPath, newPath, err)
-			}
-
-			// Добавляем уже переименованный путь в итоговый массив
-			downloadedPaths = append(downloadedPaths, newPath)
-		}
-
-		// Записываем все уникальные пути в status_file
-		return RewriteStatus(destDir, key, downloadedPaths...)
 	}
 
 	return nil

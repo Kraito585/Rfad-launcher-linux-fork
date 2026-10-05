@@ -354,8 +354,13 @@ func (a *App) StartGame() error {
 		// Проверяем условия: включен Wine FSR и это НЕ CommunityShader
 		if cfg.FSR && cfg.GrafikMod != "CommunityShader" {
 			if !utils.HostCommandExists("gamescope") {
-				slog.Warn("Gamescope требуется для FSR, но не найден в системе. Отправляем уведомление в UI.")
-				application.Get().Event.Emit("gamescope-missing")
+				slog.Warn("Gamescope требуется для FSR, но не найден в системе. FSR отключен.")
+
+				if wailsApp := application.Get(); wailsApp != nil {
+					slog.Info("Отправляем уведомление об отсутствии Gamescope в UI.")
+					wailsApp.Event.Emit("gamescope-missing")
+				}
+
 				enableGamescope = false
 			} else {
 				slog.Info("Gamescope найден в системе, активируем.")
@@ -407,6 +412,10 @@ func (a *App) GetFirstInstallStatus() bool {
 }
 
 func (a *App) InstallGame(installerPath, installPath, oldMo2Path string) error {
+	logFile, _ := setupLogging("install-game.log")
+	if logFile != nil {
+		defer logFile.Close()
+	}
 	cacheDir := filepath.Join(installPath, "tmp")
 
 	err := core.InstallGame(installerPath, installPath, oldMo2Path, cacheDir, getInnoextract(), func(p float64, msg string) {
@@ -448,7 +457,6 @@ func (a *App) portOldConfig(gameRoot string) {
 
 	file, err := os.Open(oldConfigPath)
 	if err != nil {
-		// Если файла нет (например, свежая ручная распаковка), просто игнорируем
 		return
 	}
 	defer file.Close()
@@ -504,6 +512,8 @@ func (a *App) portOldConfig(gameRoot string) {
 }
 
 func (a *App) FirstInstall() error { ///Патчи совместимости для Linux одноразовая установка
+	defer captureLogTail("launcher.log", "first-game-patch.log")()
+
 	slog.Info("Начало полного процесса установки (Загрузка + Распаковка)")
 	gameRoot := GetGameRoot()
 	offlineConfig := getOfflineConfig()
@@ -515,7 +525,7 @@ func (a *App) FirstInstall() error { ///Патчи совместимости д
 	downloadCb := func(p float64, speed float64, msg string) {
 		application.Get().Event.Emit("download-progress", map[string]interface{}{
 			"fileName":         msg,
-			"percentage":       p * 100, // Убедитесь, что здесь приходит число от 0 до 100 (или от 0 до 1, умноженное на 100)
+			"percentage":       p * 100,
 			"speedBytesPerSec": speed,
 		})
 	}
@@ -579,7 +589,7 @@ func (a *App) GetGameSettings() utils.LauncherConfig {
 				HDR:              false,
 				SteamFix:         false,
 				FpsLimit:         "60",
-				WineDllOverrides: "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b",
+				WineDllOverrides: "concrt140=n,b;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b;uiautomationcore=;tabtip.exe=",
 				GrafikMod:        "Нету",
 				FsrLvl:           "95",
 			}
@@ -610,8 +620,7 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 	// --- 1. ГОТОВИМ КОЛЛБЭКИ ДЛЯ FRONTEND ---
 	unpackCb := func(p float64, msg string) {
 		application.Get().Event.Emit("unpack-progress", map[string]interface{}{
-			"percentage": p,
-			"message":    msg,
+			"percentage": p * 100,
 		})
 	}
 
@@ -808,6 +817,7 @@ func (a *App) RecoverComponent(key string, force bool) error {
 
 	switch key {
 	case "proton":
+		defer captureLogTail("launcher.log", "recover-proton.log")()
 		slog.Info("Начата полная переустановка Proton/Wine и префикса")
 
 		application.Get().Event.Emit("update-status", map[string]string{"status": "download-started"})
@@ -832,7 +842,6 @@ func (a *App) RecoverComponent(key string, force bool) error {
 		unpackCb := func(p float64, msg string) {
 			application.Get().Event.Emit("unpack-progress", map[string]interface{}{
 				"percentage": p * 100,
-				"message":    msg,
 			})
 		}
 
@@ -873,6 +882,20 @@ func (a *App) RecoverComponent(key string, force bool) error {
 			slog.Info("Начата полная переустановка префикса")
 
 			application.Get().Event.Emit("update-status", map[string]string{"status": "download-started"})
+
+			downloadCb := func(p float64, speed float64, msg string) {
+				application.Get().Event.Emit("download-progress", map[string]interface{}{
+					"fileName":         msg,
+					"percentage":       p * 100,
+					"speedBytesPerSec": speed,
+				})
+			}
+
+			err := downloader.DownloadPrefix(gameRoot, true, downloadCb)
+			if err != nil {
+				application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
+				return fmt.Errorf("ошибка загрузки префикса: %w", err)
+			}
 
 			application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-started"})
 
@@ -936,6 +959,7 @@ func (a *App) RecoverComponent(key string, force bool) error {
 		}
 
 	case "steamfix":
+		defer captureLogTail("launcher.log", "recover-steam-fix.log")()
 		slog.Info("Начато восстановление Steam Fix")
 
 		application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-started"})
