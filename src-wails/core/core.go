@@ -64,100 +64,6 @@ func useNvapi() bool {
 	return hasNVAPI
 }
 
-// func StartMO2(gameRoot string, scriptContent, mo2Args string, isGameLaunch bool) error {
-// 	// 1. Считываем настройки лаунчера
-// 	cfg, err := utils.GetLauncherConfig()
-// 	if err != nil {
-// 		core.LogInfo("Не удалось прочитать launcher_config.txt, используются настройки по умолчанию: %v", err)
-// 		if cfg == nil {
-// 			cfg = &utils.LauncherConfig{
-// 				WineDllOverrides: "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b",
-// 			}
-// 		}
-// 	}
-
-// 	hasNvapi := useNvapi()
-// 	useGamemode := true
-// 	enableGamescope := false
-
-// 	// Включаем Gamescope ТОЛЬКО если это запуск ИГРЫ (явный флаг), включен Wine FSR и это НЕ CommunityShader
-// 	if isGameLaunch && cfg.FSR && cfg.GrafikMod != "CommunityShader" {
-// 		if !utils.HostCommandExists("gamescope") {
-// 			application.Get().Event.Emit("gamescope-missing")
-// 			enableGamescope = false
-// 		} else {
-// 			enableGamescope = true
-// 		}
-// 	}
-
-// 	wineBin := filepath.Join(gameRoot, "wine", "proton", "files", "bin", "wine")
-// 	exePath := filepath.Join(gameRoot, "MO2", "ModOrganizer.exe")
-// 	prefixPath := filepath.Join(gameRoot, "wine", "prefix", "pfx")
-
-// 	wineLibDir := filepath.Join(gameRoot, "wine", "proton", "files", "lib")
-// 	wineLib64Dir := filepath.Join(gameRoot, "wine", "proton", "files", "lib64")
-// 	wineBinDir := filepath.Join(gameRoot, "wine", "proton", "files", "bin")
-
-// 	if _, err := os.Stat(wineBin); os.IsNotExist(err) {
-// 		return fmt.Errorf("wine не найден в %s", wineBin)
-// 	}
-// 	if _, err := os.Stat(exePath); os.IsNotExist(err) {
-// 		return fmt.Errorf("исполняемый файл не найден: %s", exePath)
-// 	}
-
-// 	// Формируем правильные пути для поиска библиотек
-// 	wineDllPath := filepath.Join(wineLibDir, "wine") + ":" + filepath.Join(wineLib64Dir, "wine") + ":" + filepath.Dir(exePath)
-// 	ldLibraryPath := wineLibDir + ":" + wineLib64Dir + ":" +
-// 		filepath.Join(wineLibDir, "x86_64-linux-gnu") + ":" +
-// 		filepath.Join(wineLibDir, "i386-linux-gnu") + ":" + os.Getenv("LD_LIBRARY_PATH")
-
-// 	scriptPrefix := fmt.Sprintf(`
-// export GAME_ROOT=%q
-// export WINE_BIN=%q
-// export EXE_PATH=%q
-// export PREFIX_PATH=%q
-// export MO2_ARGS=%q
-// export WINEDLLPATH=%q
-// export LD_LIBRARY_PATH=%q
-// export PATH=%q
-// export WINEDLLOVERRIDES_PARAM=%q
-// export ENABLE_NVAPI=%q
-// export ENABLE_HDR=%q
-// export ENABLE_FSR=%q
-// export ENABLE_GAMESCOPE=%q
-// export ENABLE_MANGOHUD=%q
-// export ENABLE_SHADER_CACHE=%q
-// export USE_GAMEMODE=%q
-// export STEAM_FIX_ENABLED=%q
-// export QT_OPENGL="software"
-// `,
-// 		gameRoot, wineBin, exePath, prefixPath, mo2Args, wineDllPath, ldLibraryPath, wineBinDir+":"+os.Getenv("PATH"),
-// 		cfg.WineDllOverrides, strconv.FormatBool(hasNvapi), strconv.FormatBool(cfg.HDR), strconv.FormatBool(cfg.FSR),
-// 		strconv.FormatBool(enableGamescope), strconv.FormatBool(cfg.MangoHud), strconv.FormatBool(cfg.ShaderCache),
-// 		strconv.FormatBool(useGamemode), strconv.FormatBool(cfg.SteamFix),
-// 	)
-
-// 	// Склеиваем переменные и оригинальный скрипт запуска
-// 	fullScript := scriptPrefix + "\n" + scriptContent
-
-// 	// Обратите внимание: первый аргумент (env) теперь nil!
-// 	cmd := utils.NewHostCommand(nil, "bash", "-c", fullScript)
-
-// 	cmd.Stdout = os.Stdout
-// 	cmd.Stderr = os.Stderr
-
-// 	go func() {
-// 		err := cmd.Run()
-// 		if err != nil {
-// 			application.Get().Event.Emit("game-error", err.Error())
-// 		} else {
-// 			application.Get().Event.Emit("game-exit")
-// 		}
-// 	}()
-
-// 	return nil
-// }
-
 func StartMO2(gameRoot string, scriptContent, mo2Args string, isGameLaunch bool) error {
 	// 1. Считываем настройки лаунчера
 	cfg, err := utils.GetLauncherConfig()
@@ -165,7 +71,7 @@ func StartMO2(gameRoot string, scriptContent, mo2Args string, isGameLaunch bool)
 		core.LogInfo("Не удалось прочитать launcher_config.txt, используются настройки по умолчанию: %v", err)
 		if cfg == nil {
 			cfg = &utils.LauncherConfig{
-				WineDllOverrides: "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b",
+				WineDllOverrides: "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b;uiautomationcore=",
 			}
 		}
 	}
@@ -579,7 +485,7 @@ Loop:
 	utils.SetOneSetting("HDR", "false")
 	utils.SetOneSetting("SteamFix", "false")
 	utils.SetOneSetting("FpsLimit", "60")
-	utils.SetOneSetting("WineDllOverrides", "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b")
+	utils.SetOneSetting("WineDllOverrides", "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b;uiautomationcore=")
 	utils.SetOneSetting("GrafikMod", "Нету")
 	utils.SetOneSetting("FsrLvl", "95")
 

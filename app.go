@@ -589,7 +589,7 @@ func (a *App) GetGameSettings() utils.LauncherConfig {
 				HDR:              false,
 				SteamFix:         false,
 				FpsLimit:         "60",
-				WineDllOverrides: "concrt140=n,b;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b;uiautomationcore=;tabtip.exe=",
+				WineDllOverrides: "concrt140=n,b;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b;uiautomationcore=",
 				GrafikMod:        "Нету",
 				FsrLvl:           "95",
 			}

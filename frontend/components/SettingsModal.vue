@@ -15,7 +15,7 @@ const isLoading = ref(true);
 
 // Дефолтное значение для сброса
 const DEFAULT_WINE_OVERRIDES =
-  "concrt140=n,b;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b;uiautomationcore=;tabtip.exe=";
+  "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b;uiautomationcore=";
 
 // Реактивное состояние всех настроек
 const settings = ref({
