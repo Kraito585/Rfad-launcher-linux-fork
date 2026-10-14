@@ -25,6 +25,26 @@
 
 `✓: Доступно по умолчанию` `*: Нужны дополнительные пакеты или изменения конфигурации` `x: Недоступно`
 
+## Список репазиториев:
+
+### apt | Пакет: `RFADLauncherLinux`
+`https://kraito585.github.io/Rfad-launcher-linux-fork/package/apt stable main" | sudo tee /etc/apt/sources.list.d/rfad-launcher.list`
+
+### pacman | Пакет: `RFADLauncherLinux`
+`https://kraito585.github.io/Rfad-launcher-linux-fork/package/pacman/x86_64`
+
+### dnf | Пакет: `RFADLauncherLinux`
+`https://kraito585.github.io/Rfad-launcher-linux-fork/package/rpm/`
+
+### flatpak | Пакет: `io.rfad.Launcher`
+`https://kraito585.github.io/Rfad-launcher-linux-fork/package/repo`
+
+## Автоматическое подключение репазитория и установка пакета
+Приоретет отдаётся стандартному пакетному менеджеру, но если система не мутабельна будет использован flatpak
+```
+curl -sSLO https://raw.githubusercontent.com/Kraito585/Rfad-launcher-linux-fork/main/scripts/install.sh && chmod +x install.sh && ./install.sh
+```
+
 ## Частые вопросы:
 
 ### Что делать, если у меня уже есть сборка с сохранениями и собственными модификациями?
