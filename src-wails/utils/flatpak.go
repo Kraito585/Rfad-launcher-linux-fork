@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 func IsFlatpak() bool {
@@ -14,23 +15,100 @@ func IsFlatpak() bool {
 	return err == nil
 }
 
-func NewHostCommand(env []string, name string, args ...string) *exec.Cmd {
-	if IsFlatpak() {
-		var flatpakArgs []string
+// sanitizeHostEnv очищает переменные окружения песочницы Flatpak,
+// сохраняя пользовательские переопределения (WINEPREFIX, WINE, пути к wine/bin и wine/lib).
+func sanitizeHostEnv(env []string) []string {
+	var cleaned []string
 
-		// Используем системную утилиту env на хосте для абсолютно безопасной
-		// инициализации переменных окружения (обходим баги парсера --env=)
-		flatpakArgs = append(flatpakArgs, "--host", "env")
+	blockedPrefixes := []string{
+		"DBUS_SESSION_BUS_ADDRESS=",
+		"FLATPAK_",
+		"container=",
+		"TMPDIR=",
+		"XDG_DATA_DIRS=",
+		"XDG_CONFIG_DIRS=",
+		"GSETTINGS_SCHEMA_DIR=",
+		"GI_TYPELIB_PATH=",
+		"GST_PLUGIN_PATH=",
+		"GST_PLUGIN_SYSTEM_PATH=",
+		"GST_REGISTRY=",
+		"QT_PLUGIN_PATH=",
+		"QML2_IMPORT_PATH=",
+		"LD_PRELOAD=",
+	}
 
-		// Передаем переменные напрямую в env (формат "KEY=VALUE")
-		for _, e := range env {
-			flatpakArgs = append(flatpakArgs, e)
+	for _, e := range env {
+		skip := false
+		for _, prefix := range blockedPrefixes {
+			if strings.HasPrefix(e, prefix) {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
 		}
 
-		flatpakArgs = append(flatpakArgs, name)
-		flatpakArgs = append(flatpakArgs, args...)
+		// Вырезаем пути Flatpak runtime из LD_LIBRARY_PATH, оставляя только пути игры/wine
+		if strings.HasPrefix(e, "LD_LIBRARY_PATH=") {
+			val := strings.TrimPrefix(e, "LD_LIBRARY_PATH=")
+			var validPaths []string
+			for _, p := range strings.Split(val, ":") {
+				if p == "" || strings.HasPrefix(p, "/app") || strings.HasPrefix(p, "/usr/lib/") {
+					continue
+				}
+				validPaths = append(validPaths, p)
+			}
+			if len(validPaths) > 0 {
+				cleaned = append(cleaned, "LD_LIBRARY_PATH="+strings.Join(validPaths, ":"))
+			}
+			continue
+		}
 
-		return exec.Command("flatpak-spawn", flatpakArgs...)
+		// Вырезаем /app и /usr/lib/sdk из PATH и гарантируем наличие стандартных путей хоста
+		if strings.HasPrefix(e, "PATH=") {
+			val := strings.TrimPrefix(e, "PATH=")
+			var validPaths []string
+			for _, p := range strings.Split(val, ":") {
+				if p == "" || strings.HasPrefix(p, "/app") || strings.HasPrefix(p, "/usr/lib/sdk") {
+					continue
+				}
+				validPaths = append(validPaths, p)
+			}
+			hostDefaults := []string{"/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"}
+			for _, def := range hostDefaults {
+				found := false
+				for _, vp := range validPaths {
+					if vp == def {
+						found = true
+						break
+					}
+				}
+				if !found {
+					validPaths = append(validPaths, def)
+				}
+			}
+			cleaned = append(cleaned, "PATH="+strings.Join(validPaths, ":"))
+			continue
+		}
+
+		cleaned = append(cleaned, e)
+	}
+
+	return cleaned
+}
+
+func buildHostCommandArgs(env []string, name string, args ...string) []string {
+	flatpakArgs := []string{"--host", "env"}
+	flatpakArgs = append(flatpakArgs, sanitizeHostEnv(env)...)
+	flatpakArgs = append(flatpakArgs, name)
+	flatpakArgs = append(flatpakArgs, args...)
+	return flatpakArgs
+}
+
+func NewHostCommand(env []string, name string, args ...string) *exec.Cmd {
+	if IsFlatpak() {
+		return exec.Command("flatpak-spawn", buildHostCommandArgs(env, name, args...)...)
 	}
 
 	cmd := exec.Command(name, args...)
@@ -42,19 +120,7 @@ func NewHostCommand(env []string, name string, args ...string) *exec.Cmd {
 
 func NewHostCommandContext(ctx context.Context, env []string, name string, args ...string) *exec.Cmd {
 	if IsFlatpak() {
-		var flatpakArgs []string
-
-		// Используем системную утилиту env на хосте
-		flatpakArgs = append(flatpakArgs, "--host", "env")
-
-		for _, e := range env {
-			flatpakArgs = append(flatpakArgs, e)
-		}
-
-		flatpakArgs = append(flatpakArgs, name)
-		flatpakArgs = append(flatpakArgs, args...)
-
-		return exec.CommandContext(ctx, "flatpak-spawn", flatpakArgs...)
+		return exec.CommandContext(ctx, "flatpak-spawn", buildHostCommandArgs(env, name, args...)...)
 	}
 
 	cmd := exec.CommandContext(ctx, name, args...)
@@ -66,7 +132,7 @@ func NewHostCommandContext(ctx context.Context, env []string, name string, args 
 
 func HostCommandExists(name string) bool {
 	if IsFlatpak() {
-		err := exec.Command("flatpak-spawn", "--host", "which", name).Run()
+		err := exec.Command("flatpak-spawn", "--host", "sh", "-c", `command -v "$1" >/dev/null 2>&1`, "_", name).Run()
 		return err == nil
 	}
 	_, err := exec.LookPath(name)
@@ -86,7 +152,6 @@ func HostHardLink(src, dst string) error {
 	}
 
 	if IsFlatpak() {
-		// Используем -f для перезаписи и CombinedOutput для захвата реальной причины ошибки
 		cmd := exec.Command("flatpak-spawn", "--host", "ln", "-f", absSrc, absDst)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -96,6 +161,5 @@ func HostHardLink(src, dst string) error {
 		return nil
 	}
 
-	// Запасной вариант для работы без Flatpak
 	return os.Link(absSrc, absDst)
 }

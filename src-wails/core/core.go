@@ -324,7 +324,7 @@ func ApplyConfigPatches(gameRoot string, progressCb func(float64, string)) (int,
 	return config_patcher.ApplyPatchesFromJSON(gameRoot, patches, progressCb)
 }
 
-func InstallGame(installerPath, installPath, oldMo2Path, cacheDir string, innoextractBytes []byte, progressCb func(float64, string)) error {
+func InstallGame(installerPath, installPath, oldMo2Path, cacheDir string, innoextractBytes []byte, LatestMigrationID int, progressCb func(float64, string)) error {
 	installerPath = strings.Trim(installerPath, "\"' ")
 	installPath = strings.Trim(installPath, "\"' ")
 	oldMo2Path = strings.TrimSpace(oldMo2Path) // Очищаем от лишних пробелов
@@ -484,6 +484,7 @@ Loop:
 	utils.SetOneSetting("WineDllOverrides", "concrt140=n;xaudio2_7=n,b;d3d11=n,b;dxgi=n,b;d3dx9_42=n,b;d3dcompiler_47=n,b;dinput8=n,b;mscoree=n;d3d12=n,b;d3d12core=n,b;uiautomationcore=")
 	utils.SetOneSetting("GrafikMod", "Нету")
 	utils.SetOneSetting("FsrLvl", "95")
+	utils.SetOneSetting("migrationVersion", LatestMigrationID)
 
 	if progressCb != nil {
 		progressCb(1.0, "Установка завершена!")

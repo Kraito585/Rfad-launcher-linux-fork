@@ -18,6 +18,7 @@ const isInstalling = ref(false);
 const installProgress = ref(0);
 const installStatus = ref("");
 const needsFirstInstall = ref(false);
+const needsMigration = ref(false);
 
 // Компоненты
 import DiscordIcon from "~/components/icons/Discord.vue";
@@ -409,19 +410,86 @@ const startFirstInstallFlow = async () => {
   }
 };
 
+const startMigrationFlow = async () => {
+  isGameStarting.value = true;
+  updateStarted.value = false;
+  updateDownloadStarted.value = false;
+  updateUnpackStarted.value = true;
+  updateDownloadPercentage.value = 0;
+  updateUnpackPercentage.value = 0;
+  updateDownloadSpeed.value = "0";
+
+  const unlistenDownload = Events.On("download-progress", (event: any) => {
+    const payload = event.data[0] || event.data;
+    if (typeof payload.speedBytesPerSec === "number") {
+      updateDownloadSpeed.value = (
+        payload.speedBytesPerSec /
+        1024 /
+        1024
+      ).toFixed(1);
+    } else {
+      updateDownloadSpeed.value = payload.speedBytesPerSec;
+    }
+    updateDownloadPercentage.value = payload.percentage;
+  });
+
+  const unlistenUnpack = Events.On("unpack-progress", (event: any) => {
+    const payload = event.data[0] || event.data;
+    updateUnpackPercentage.value = payload.percentage;
+  });
+
+  const unlistenUpdateStatus = Events.On("update-status", (event: any) => {
+    const payload = event.data[0] || event.data;
+    if (payload.status === "download-started") {
+      updateDownloadStarted.value = true;
+      updateUnpackStarted.value = false;
+    }
+    if (payload.status === "download-finished") {
+      updateDownloadStarted.value = false;
+    }
+    if (payload.status === "unpack-started") {
+      updateUnpackStarted.value = true;
+      updateDownloadStarted.value = false;
+    }
+    if (payload.status === "unpack-finished") {
+      updateUnpackStarted.value = false;
+    }
+  });
+
+  try {
+    await App.RunMigrations();
+    needsMigration.value = await App.GetMigrationStatus();
+    await loadVersions();
+  } catch (e) {
+    console.error("RunMigrations error:", e);
+    await App.ShowMessageDialog("Ошибка миграции", String(e));
+  } finally {
+    isGameStarting.value = false;
+    updateDownloadStarted.value = false;
+    updateUnpackStarted.value = false;
+
+    unlistenDownload();
+    unlistenUnpack();
+    unlistenUpdateStatus();
+  }
+};
+
 const processButtonClick = async () => {
   if (!isPathExist.value) {
     showInstallModal.value = true;
     return;
   }
 
-  // Если это первый запуск — применяем Linux-патч (распаковка префикса, установка .NET/VCRedist)
   if (needsFirstInstall.value) {
     await startFirstInstallFlow();
     return;
   }
 
-  // Во всех остальных случаях кнопка делает ТОЛЬКО одно — запускает игру.
+  if (needsMigration.value) {
+    await startMigrationFlow();
+    return;
+  }
+
   await startGame();
 };
 
@@ -432,9 +500,11 @@ const checkPathStatus = async () => {
 
   if (exist) {
     needsFirstInstall.value = await App.GetFirstInstallStatus();
+    needsMigration.value = needsFirstInstall.value
+      ? false
+      : await App.GetMigrationStatus();
   }
 };
-
 // ===== Жизненный цикл =====
 onMounted(async () => {
   firstStart.value = !localStorage.getItem("lastUpdate");
@@ -898,7 +968,7 @@ onMounted(async () => {
               {{
                 isGameStarting
                   ? "Запущено"
-                  : needsFirstInstall
+                  : needsFirstInstall || needsMigration
                     ? "Patch"
                     : "Играть"
               }}

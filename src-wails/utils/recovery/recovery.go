@@ -50,6 +50,18 @@ func RecoverPrefix(gameRoot string) error {
 		return fmt.Errorf("ошибка при лечении префикса (wineboot): %w", err)
 	}
 
+	usersDir := filepath.Join(prefixPath, "drive_c", "users")
+	if userEntries, err := os.ReadDir(usersDir); err == nil {
+		for _, u := range userEntries {
+			if !u.IsDir() || strings.EqualFold(u.Name(), "Public") {
+				continue
+			}
+			userRoot := filepath.Join(usersDir, u.Name())
+			_ = os.MkdirAll(filepath.Join(userRoot, "AppData", "Local", "Skyrim Special Edition"), 0755)
+			_ = os.MkdirAll(filepath.Join(userRoot, "Documents", "My Games", "Skyrim Special Edition"), 0755)
+		}
+	}
+
 	injectedDlls, err := InjectLibraries(gameRoot)
 	if err != nil {
 		slog.Warn("Ошибка инъекции библиотек в system32", "err", err)
