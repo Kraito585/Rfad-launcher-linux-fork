@@ -11,29 +11,28 @@ import (
 
 func InstallGEProton(gameRoot string, unpackCb func(float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
-	protonPath, err := utils.GetDownloadedPath(destDir, "GE-Proton")
+	wineArchivePath, err := utils.GetDownloadedPath(destDir, "Wine")
 	if err != nil {
-		return fmt.Errorf("не удалось найти путь к архиву Proton: %w", err)
+		return fmt.Errorf("не удалось найти путь к архиву Wine: %w", err)
 	}
-	if protonPath == "" {
-		return fmt.Errorf("архив Proton не найден в статусе загрузки")
+	if wineArchivePath == "" {
+		return fmt.Errorf("архив Wine не найден в статусе загрузки")
 	}
-	slog.Info("proton path:", "path", protonPath)
+	slog.Info("wine archive path:", "path", wineArchivePath)
 
-	tempDir := filepath.Join(gameRoot, "temp_proton_extract")
+	tempDir := filepath.Join(gameRoot, "temp_wine_extract")
+	os.RemoveAll(tempDir)
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		return fmt.Errorf("не удалось создать временную папку: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Передаем коллбэк в распаковщик архива
-	if err := utils.ExtractArchive(protonPath, tempDir, func(p float64, msg string) {
+	if err := utils.ExtractArchive(wineArchivePath, tempDir, func(p float64, msg string) {
 		if unpackCb != nil {
-			// Добавляем префикс "Proton:", чтобы пользователю было понятно, что именно распаковывается
-			unpackCb(p, fmt.Sprintf("Proton: %s", msg))
+			unpackCb(p, fmt.Sprintf("Wine: %s", msg))
 		}
 	}); err != nil {
-		return fmt.Errorf("ошибка распаковки Proton: %w", err)
+		return fmt.Errorf("ошибка распаковки Wine: %w", err)
 	}
 
 	entries, err := os.ReadDir(tempDir)
@@ -43,32 +42,51 @@ func InstallGEProton(gameRoot string, unpackCb func(float64, string)) error {
 
 	var sourceDir string
 	for _, entry := range entries {
-		if entry.IsDir() && strings.Contains(entry.Name(), "GE-Proton") {
+		if entry.IsDir() && strings.ToLower(entry.Name()) == "wine" {
 			sourceDir = filepath.Join(tempDir, entry.Name())
 			break
 		}
 	}
 	if sourceDir == "" {
-		return fmt.Errorf("в архиве не найдена папка, содержащая 'GE-Proton'")
+		return fmt.Errorf("в архиве не найдена папка 'wine'")
 	}
 
-	wineDir := filepath.Join(gameRoot, "wine")
-	if err := os.MkdirAll(wineDir, 0755); err != nil {
+	wineTarget := filepath.Join(gameRoot, "wine")
+	if err := os.MkdirAll(wineTarget, 0755); err != nil {
 		return fmt.Errorf("не удалось создать папку wine: %w", err)
 	}
-	protonTarget := filepath.Join(wineDir, "proton")
-	if err := os.RemoveAll(protonTarget); err != nil {
-		return fmt.Errorf("не удалось удалить старую папку proton: %w", err)
-	}
-	if err := os.Rename(sourceDir, protonTarget); err != nil {
-		return fmt.Errorf("не удалось переименовать папку в proton: %w", err)
+
+	// Удаляем устаревшую папку proton от прошлых версий, если она осталась
+	os.RemoveAll(filepath.Join(wineTarget, "proton"))
+
+	// Переносим содержимое wine/ (bin, lib, share, include) в gameRoot/wine/, не трогая prefix и tmp
+	subEntries, err := os.ReadDir(sourceDir)
+	if err != nil {
+		return fmt.Errorf("не удалось прочитать содержимое папки wine: %w", err)
 	}
 
-	slog.Info("Proton успешно распакован и переименован", "target", protonTarget)
+	for _, sub := range subEntries {
+		srcPath := filepath.Join(sourceDir, sub.Name())
+		dstPath := filepath.Join(wineTarget, sub.Name())
 
-	// Отправляем 100% (1.0), чтобы прогресс-бар красиво закрылся на этом этапе
+		if err := os.RemoveAll(dstPath); err != nil {
+			return fmt.Errorf("не удалось удалить старый %s: %w", dstPath, err)
+		}
+		if err := os.Rename(srcPath, dstPath); err != nil {
+			return fmt.Errorf("не удалось перенести %s в %s: %w", srcPath, dstPath, err)
+		}
+	}
+
+	// Контрольная проверка бинарника
+	wineBin := filepath.Join(wineTarget, "bin", "wine")
+	if _, err := os.Stat(wineBin); err != nil {
+		return fmt.Errorf("после распаковки не найден бинарник %s: %w", wineBin, err)
+	}
+
+	slog.Info("Wine успешно распакован", "target", wineTarget)
+
 	if unpackCb != nil {
-		unpackCb(1.0, "Настройка файлов Proton завершена")
+		unpackCb(1.0, "Настройка файлов Wine завершена")
 	}
 
 	return nil

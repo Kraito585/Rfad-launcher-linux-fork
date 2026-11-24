@@ -7,13 +7,14 @@ import (
 	"path/filepath"
 	"rfad-launcher-linux/src-wails/utils"
 	"rfad-launcher-linux/src-wails/utils/recovery"
+	"strings"
 )
 
 func UnpackPrefix(gameRoot string, unpackCb func(float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
 
 	// ==========================================
-	// 1. РАСПАКОВКА ПРЕФИКСА
+	// 1. РАСПАКОВКА ПРЕФИКСА (rfad_clean_pfx -> wine/prefix/pfx)
 	// ==========================================
 	archivePath, err := utils.GetDownloadedPath(destDir, "prefix")
 	if err != nil || archivePath == "" {
@@ -22,13 +23,16 @@ func UnpackPrefix(gameRoot string, unpackCb func(float64, string)) error {
 
 	slog.Info("prefix archive path:", "path", archivePath)
 	tempDir := filepath.Join(gameRoot, "temp_prefix_extract")
-	os.MkdirAll(tempDir, 0755)
+	os.RemoveAll(tempDir)
+	if err := os.MkdirAll(tempDir, 0755); err != nil {
+		return fmt.Errorf("не удалось создать временную папку префикса: %w", err)
+	}
 	defer os.RemoveAll(tempDir)
 
 	if err := utils.ExtractArchive(archivePath, tempDir, func(p float64, msg string) {
 		if unpackCb != nil {
 			unpackCb(p*0.8, fmt.Sprintf("Префикс: %s", msg))
-		} // Выделяем 80% на префикс
+		}
 	}); err != nil {
 		return fmt.Errorf("ошибка распаковки префикса: %w", err)
 	}
@@ -40,57 +44,62 @@ func UnpackPrefix(gameRoot string, unpackCb func(float64, string)) error {
 
 	var sourceDir string
 	for _, entry := range entries {
-		if entry.IsDir() && (entry.Name() == "RFAD_SE" || entry.Name() == "pfx dotnet") {
-			sourceDir = filepath.Join(tempDir, entry.Name())
-			break
+		if entry.IsDir() {
+			name := strings.ToLower(entry.Name())
+			if name == "rfad_clean_pfx" || name == "pfx" {
+				sourceDir = filepath.Join(tempDir, entry.Name())
+				break
+			}
 		}
 	}
 	if sourceDir == "" {
-		return fmt.Errorf("в архиве не найдена ожидаемая папка")
+		return fmt.Errorf("в архиве префикса не найдена папка rfad_clean_pfx")
 	}
 
-	wineDir := filepath.Join(gameRoot, "wine")
-	os.MkdirAll(wineDir, 0755)
-	prefixTarget := filepath.Join(wineDir, "prefix")
-	os.RemoveAll(prefixTarget)
-	if err := os.Rename(sourceDir, prefixTarget); err != nil {
-		return err
+	prefixParent := filepath.Join(gameRoot, "wine", "prefix")
+	if err := os.MkdirAll(prefixParent, 0755); err != nil {
+		return fmt.Errorf("не удалось создать папку %s: %w", prefixParent, err)
+	}
+
+	pfxTarget := filepath.Join(prefixParent, "pfx")
+	if err := os.RemoveAll(pfxTarget); err != nil {
+		return fmt.Errorf("не удалось удалить старый префикс %s: %w", pfxTarget, err)
+	}
+
+	if err := os.Rename(sourceDir, pfxTarget); err != nil {
+		return fmt.Errorf("не удалось перенести префикс в %s: %w", pfxTarget, err)
 	}
 
 	// ==========================================
-	// 2. РАСПАКОВКА БИБЛИОТЕК В TMP/LIBS
+	// 2. РАСПАКОВКА ДОП. БИБЛИОТЕК В TMP/LIBS (если есть)
 	// ==========================================
 	if unpackCb != nil {
-		unpackCb(0.85, "Распаковка библиотек окружения (DXVK)...")
+		unpackCb(0.85, "Распаковка библиотек окружения...")
 	}
 
 	libsArchivePath, err := utils.GetDownloadedPath(destDir, "libs")
 	if err == nil && libsArchivePath != "" {
 		libsTargetDir := filepath.Join(gameRoot, "wine", "tmp", "libs")
-
-		// Чистим старую папку перед распаковкой новых библиотек
 		os.RemoveAll(libsTargetDir)
 		os.MkdirAll(libsTargetDir, 0755)
 
 		if err := utils.ExtractArchive(libsArchivePath, libsTargetDir, nil); err != nil {
 			slog.Warn("Ошибка распаковки библиотек окружения", "err", err)
 		}
-	} else {
-		slog.Warn("Архив с библиотеками (libs) не найден, симлинки созданы не будут")
 	}
 
 	// ==========================================
-	// 3. ЛЕЧЕНИЕ И СОЗДАНИЕ СИМЛИНКОВ
+	// 3. ЛЕЧЕНИЕ И ОБНОВЛЕНИЕ ПРЕФИКСА (wineboot -u)
 	// ==========================================
 	if unpackCb != nil {
-		unpackCb(0.95, "Интеграция библиотек в систему...")
+		unpackCb(0.95, "Инициализация префикса...")
 	}
 
 	if err := recovery.RecoverPrefix(gameRoot); err != nil {
 		return fmt.Errorf("ошибка при лечении префикса (wineboot): %w", err)
 	}
 
-	slog.Info("Префикс успешно распакован и настроен")
+	slog.Info("Префикс успешно распакован и настроен", "target", pfxTarget)
 	if unpackCb != nil {
 		unpackCb(1.0, "Установка префикса завершена")
 	}

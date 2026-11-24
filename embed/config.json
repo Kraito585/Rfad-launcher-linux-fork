@@ -44,8 +44,8 @@
     }
   },
   {
-    "ReplacePrefix": {
-      "lock_gui=false": "lock_gui=true"
+    "Replace": {
+      "lock_gui=true": "lock_gui=false"
     },
     "TargetFile": "MO2/ModOrganizer.ini"
   }

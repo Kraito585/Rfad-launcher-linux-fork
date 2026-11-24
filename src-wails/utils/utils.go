@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/bodgit/sevenzip"
+	"github.com/klauspost/compress/zstd"
 )
 
 const systemConfigPath = "~/.config/rfad-launcher/launcher.conf"
@@ -21,6 +22,8 @@ func ExtractArchive(archivePath, destDir string, progressCb func(float64, string
 	switch {
 	case strings.HasSuffix(archivePath, ".tar.gz"):
 		return extractTarGz(archivePath, destDir, progressCb)
+	case strings.HasSuffix(archivePath, ".tar.zst"):
+		return extractTarZst(archivePath, destDir, progressCb)
 	case strings.HasSuffix(archivePath, ".7z"):
 		return extract7z(archivePath, destDir, progressCb)
 	case strings.HasSuffix(archivePath, ".zip"):
@@ -342,6 +345,104 @@ func extractTarGz(archivePath, targetDir string, progressCb func(float64, string
 	}
 
 	fmt.Printf("Распаковка tar.gz %s завершена успешно\n", archivePath)
+	return nil
+}
+
+func extractTarZst(archivePath, targetDir string, progressCb func(float64, string)) error {
+	fmt.Printf("Открытие tar.zst архива: %s\n", archivePath)
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return fmt.Errorf("не удалось открыть архив: %w", err)
+	}
+	defer f.Close()
+
+	zr, err := zstd.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("не удалось создать zstd-ридер: %w", err)
+	}
+	tr := tar.NewReader(zr)
+
+	var totalFiles int
+	for {
+		_, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			zr.Close()
+			return fmt.Errorf("ошибка чтения tar.zst (первый проход): %w", err)
+		}
+		totalFiles++
+	}
+	zr.Close()
+
+	if _, err := f.Seek(0, 0); err != nil {
+		return err
+	}
+	zr, err = zstd.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("не удалось пересоздать zstd-ридер: %w", err)
+	}
+	defer zr.Close()
+	tr = tar.NewReader(zr)
+
+	var currentIndex int
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("ошибка чтения файла из tar.zst: %w", err)
+		}
+
+		currentIndex++
+		targetPath := filepath.Join(targetDir, header.Name)
+
+		if !strings.HasPrefix(targetPath, filepath.Clean(targetDir)+string(os.PathSeparator)) && targetPath != filepath.Clean(targetDir) {
+			return fmt.Errorf("некорректный путь в архиве: %s", header.Name)
+		}
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(targetPath, os.FileMode(header.Mode)); err != nil {
+				return err
+			}
+		case tar.TypeReg, tar.TypeRegA:
+			if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+				return err
+			}
+			outFile, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode))
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(outFile, tr); err != nil {
+				outFile.Close()
+				return err
+			}
+			outFile.Close()
+		case tar.TypeSymlink:
+			if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+				return err
+			}
+			os.Remove(targetPath)
+			if err := os.Symlink(header.Linkname, targetPath); err != nil {
+				return err
+			}
+		default:
+			continue
+		}
+
+		if progressCb != nil && totalFiles > 0 {
+			percent := float64(currentIndex) / float64(totalFiles)
+			cleanName := sanitize(filepath.Base(header.Name))
+			if len(cleanName) > 40 {
+				cleanName = "..." + cleanName[len(cleanName)-37:]
+			}
+			progressCb(percent, fmt.Sprintf("Распаковка: %s", cleanName))
+		}
+	}
+
 	return nil
 }
 

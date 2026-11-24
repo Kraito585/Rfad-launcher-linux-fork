@@ -25,6 +25,8 @@ var appIcon []byte
 
 var version = "dev"
 
+const LatestMigrationID = 1
+
 func init() {
 	os.Setenv("GDK_BACKEND", "wayland,x11")
 	os.Setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1")

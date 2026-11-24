@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"rfad-launcher-linux/src-wails/core"
 	"rfad-launcher-linux/src-wails/downloader"
+	"rfad-launcher-linux/src-wails/migrations"
 	config_patcher "rfad-launcher-linux/src-wails/patches/patch_configs"
 	"rfad-launcher-linux/src-wails/patches/prefix_install"
 	"rfad-launcher-linux/src-wails/patches/proton_install"
@@ -23,6 +24,7 @@ import (
 	graficswitch "rfad-launcher-linux/src-wails/utils/grafic_switch"
 	"rfad-launcher-linux/src-wails/utils/steam_drm_switch"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -346,33 +348,9 @@ func (a *App) StartGame() error {
 	scriptContent := string(scriptBytes)
 
 	mo2Args := "moshortcut://:SKSE"
-	enableGamescope := false
-
-	// Читаем конфиг, чтобы понять, нужен ли нам Gamescope для FSR
-	cfg, err := utils.GetLauncherConfig()
-	if err == nil && cfg != nil {
-		// Проверяем условия: включен Wine FSR и это НЕ CommunityShader
-		if cfg.FSR && cfg.GrafikMod != "CommunityShader" {
-			if !utils.HostCommandExists("gamescope") {
-				slog.Warn("Gamescope требуется для FSR, но не найден в системе. FSR отключен.")
-
-				if wailsApp := application.Get(); wailsApp != nil {
-					slog.Info("Отправляем уведомление об отсутствии Gamescope в UI.")
-					wailsApp.Event.Emit("gamescope-missing")
-				}
-
-				enableGamescope = false
-			} else {
-				slog.Info("Gamescope найден в системе, активируем.")
-				enableGamescope = true
-			}
-		}
-	} else {
-		slog.Warn("Не удалось прочитать конфиг перед запуском игры", "error", err)
-	}
 
 	// Передаем вычисленный флаг enableGamescope 5-м аргументом
-	if err := core.StartMO2(gameRoot, scriptContent, mo2Args, enableGamescope); err != nil {
+	if err := core.StartMO2(gameRoot, scriptContent, mo2Args, true); err != nil {
 		slog.Error("StartGame failed", "error", err)
 		return err
 	}
@@ -418,7 +396,7 @@ func (a *App) InstallGame(installerPath, installPath, oldMo2Path string) error {
 	}
 	cacheDir := filepath.Join(installPath, "tmp")
 
-	err := core.InstallGame(installerPath, installPath, oldMo2Path, cacheDir, getInnoextract(), func(p float64, msg string) {
+	err := core.InstallGame(installerPath, installPath, oldMo2Path, cacheDir, getInnoextract(), LatestMigrationID, func(p float64, msg string) {
 		application.Get().Event.Emit("install-progress", map[string]interface{}{
 			"percentage": p,
 			"message":    msg,
@@ -781,7 +759,7 @@ func (a *App) OpenProtonTrics() error {
 	}
 
 	prefixPath := filepath.Join(gameRoot, "wine", "prefix", "pfx")
-	wineBin := filepath.Join(gameRoot, "wine", "proton", "files", "bin", "wine")
+	wineBin := filepath.Join(gameRoot, "wine", "bin", "wine")
 
 	env := append(os.Environ(),
 		"WINEPREFIX="+prefixPath,
@@ -831,7 +809,7 @@ func (a *App) RecoverComponent(key string, force bool) error {
 		}
 
 		// 1. Скачиваем Proton
-		err := downloader.DownloadGEProton(gameRoot, true, downloadCb)
+		err := downloader.DownloadWine(gameRoot, true, downloadCb)
 		if err != nil {
 			application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
 			return fmt.Errorf("ошибка загрузки proton: %w", err)
@@ -846,16 +824,13 @@ func (a *App) RecoverComponent(key string, force bool) error {
 		}
 
 		// 3. Удаляем старые папки
-		protonTarget := filepath.Join(gameRoot, "wine", "proton")
-		prefixTarget := filepath.Join(gameRoot, "wine", "prefix")
+		wineTarget := filepath.Join(gameRoot, "wine")
 
 		slog.Info("Удаление старых директорий proton и prefix")
-		os.RemoveAll(protonTarget)
-		os.RemoveAll(prefixTarget)
+		os.RemoveAll(wineTarget)
 
 		// 4. Распаковываем Proton
 		slog.Info("Распаковка Proton")
-		// Предполагается, что у вас есть функция proton_install.UnpackProton (по аналогии с prefix_install)
 		err = proton_install.InstallGEProton(gameRoot, unpackCb)
 		if err != nil {
 			application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
@@ -1087,10 +1062,72 @@ func (a *App) SelectDirectory() (string, error) {
 func (a *App) ShowMessageDialog(title, message string) {
 	app := application.Get()
 
-	// Просто вызываем цепочку методов, не пытаясь вернуть результат
 	app.Dialog.
 		Info().
 		SetTitle(title).
 		SetMessage(message).
 		Show()
+}
+
+// GetMigrationStatus возвращает true, если требуется выполнить миграцию
+func (a *App) GetMigrationStatus() bool {
+	if a.GetFirstInstallStatus() {
+		return false
+	}
+
+	val, err := utils.GetOneSetting("migrationVersion")
+	if err != nil || strings.TrimSpace(val) == "" {
+		return LatestMigrationID > 0
+	}
+
+	currentID, err := strconv.Atoi(strings.TrimSpace(val))
+	if err != nil {
+		return true
+	}
+
+	return currentID < LatestMigrationID
+}
+
+// RunMigrations запускает цепочку миграций и шлёт события прогресса в UI
+func (a *App) RunMigrations() error {
+	slog.Info("Запуск миграции до версии", "targetID", LatestMigrationID)
+
+	gameRoot := GetGameRoot()
+	if gameRoot == "" {
+		return fmt.Errorf("не удалось определить путь к игре")
+	}
+
+	downloadCb := func(p float64, speed float64, msg string) {
+		speedMB := speed / 1024 / 1024
+		application.Get().Event.Emit("download-progress", map[string]interface{}{
+			"fileName":         msg,
+			"percentage":       p * 100,
+			"speedBytesPerSec": fmt.Sprintf("%.1f", speedMB),
+		})
+	}
+	unpackCb := func(p float64, msg string) {
+		application.Get().Event.Emit("unpack-progress", map[string]interface{}{
+			"percentage": p * 100,
+		})
+	}
+
+	currentID := 0
+	if val, err := utils.GetOneSetting("migrationVersion"); err == nil && strings.TrimSpace(val) != "" {
+		if parsed, err := strconv.Atoi(strings.TrimSpace(val)); err == nil {
+			currentID = parsed
+		}
+	}
+
+	err := migrations.StartMigrations(GetGameRoot(), LatestMigrationID, currentID, getLibs(), getOfflineConfig(), unpackCb, downloadCb)
+	if err != nil {
+		return err
+	}
+
+	if err := utils.SetOneSetting("migrationVersion", LatestMigrationID); err != nil {
+		return fmt.Errorf("не удалось сохранить migrationVersion: %w", err)
+	}
+
+	application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-finished"})
+	slog.Info("Миграции успешно завершены")
+	return nil
 }
