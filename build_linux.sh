@@ -101,8 +101,7 @@ run_build() {
     
     while [ $wails_attempt -le $wails_max_retries ]; do
         echo "=> Загрузка Wails (Попытка $wails_attempt/$wails_max_retries)..."
-        # Версия обновлена до beta.27 согласно вашему логу
-        if go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.27; then
+        if go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0; then
             echo "Wails CLI успешно установлен!"
             break
         fi

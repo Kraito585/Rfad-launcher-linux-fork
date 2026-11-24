@@ -346,33 +346,9 @@ func (a *App) StartGame() error {
 	scriptContent := string(scriptBytes)
 
 	mo2Args := "moshortcut://:SKSE"
-	enableGamescope := false
-
-	// Читаем конфиг, чтобы понять, нужен ли нам Gamescope для FSR
-	cfg, err := utils.GetLauncherConfig()
-	if err == nil && cfg != nil {
-		// Проверяем условия: включен Wine FSR и это НЕ CommunityShader
-		if cfg.FSR && cfg.GrafikMod != "CommunityShader" {
-			if !utils.HostCommandExists("gamescope") {
-				slog.Warn("Gamescope требуется для FSR, но не найден в системе. FSR отключен.")
-
-				if wailsApp := application.Get(); wailsApp != nil {
-					slog.Info("Отправляем уведомление об отсутствии Gamescope в UI.")
-					wailsApp.Event.Emit("gamescope-missing")
-				}
-
-				enableGamescope = false
-			} else {
-				slog.Info("Gamescope найден в системе, активируем.")
-				enableGamescope = true
-			}
-		}
-	} else {
-		slog.Warn("Не удалось прочитать конфиг перед запуском игры", "error", err)
-	}
 
 	// Передаем вычисленный флаг enableGamescope 5-м аргументом
-	if err := core.StartMO2(gameRoot, scriptContent, mo2Args, enableGamescope); err != nil {
+	if err := core.StartMO2(gameRoot, scriptContent, mo2Args, true); err != nil {
 		slog.Error("StartGame failed", "error", err)
 		return err
 	}
@@ -781,7 +757,7 @@ func (a *App) OpenProtonTrics() error {
 	}
 
 	prefixPath := filepath.Join(gameRoot, "wine", "prefix", "pfx")
-	wineBin := filepath.Join(gameRoot, "wine", "proton", "files", "bin", "wine")
+	wineBin := filepath.Join(gameRoot, "wine", "bin", "wine")
 
 	env := append(os.Environ(),
 		"WINEPREFIX="+prefixPath,
@@ -831,7 +807,7 @@ func (a *App) RecoverComponent(key string, force bool) error {
 		}
 
 		// 1. Скачиваем Proton
-		err := downloader.DownloadGEProton(gameRoot, true, downloadCb)
+		err := downloader.DownloadWine(gameRoot, true, downloadCb)
 		if err != nil {
 			application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
 			return fmt.Errorf("ошибка загрузки proton: %w", err)
@@ -846,16 +822,13 @@ func (a *App) RecoverComponent(key string, force bool) error {
 		}
 
 		// 3. Удаляем старые папки
-		protonTarget := filepath.Join(gameRoot, "wine", "proton")
-		prefixTarget := filepath.Join(gameRoot, "wine", "prefix")
+		wineTarget := filepath.Join(gameRoot, "wine")
 
 		slog.Info("Удаление старых директорий proton и prefix")
-		os.RemoveAll(protonTarget)
-		os.RemoveAll(prefixTarget)
+		os.RemoveAll(wineTarget)
 
 		// 4. Распаковываем Proton
 		slog.Info("Распаковка Proton")
-		// Предполагается, что у вас есть функция proton_install.UnpackProton (по аналогии с prefix_install)
 		err = proton_install.InstallGEProton(gameRoot, unpackCb)
 		if err != nil {
 			application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})

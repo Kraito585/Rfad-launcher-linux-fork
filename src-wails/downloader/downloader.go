@@ -339,6 +339,81 @@ func downloadFileToPath(url, destPath, fileName string, progressCb func(float64,
 	return err
 }
 
+// extractDriveFileID извлекает ID файла из ссылки Google Drive (или возвращает строку как есть, если передан сам ID)
+func extractDriveFileID(input string) (string, error) {
+	input = strings.TrimSpace(input)
+	if !strings.Contains(input, "/") && !strings.Contains(input, "?") {
+		if input == "" {
+			return "", fmt.Errorf("пустой ID файла Google Drive")
+		}
+		return input, nil
+	}
+
+	u, err := url.Parse(input)
+	if err != nil {
+		return "", fmt.Errorf("некорректный URL Google Drive: %w", err)
+	}
+
+	// Формат /file/d/<ID>/view
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	for i := 0; i < len(parts)-1; i++ {
+		if parts[i] == "d" && parts[i+1] != "" {
+			return parts[i+1], nil
+		}
+	}
+
+	// Формат ?id=<ID>
+	if id := u.Query().Get("id"); id != "" {
+		return id, nil
+	}
+
+	return "", fmt.Errorf("не удалось извлечь file ID из ссылки: %s", input)
+}
+
+// DownloadDriveFile скачивает один файл с Google Drive по URL или ID.
+// Если fileName пустой, используется оригинальное имя файла с Google Drive.
+func DownloadDriveFile(fileURLOrID, destDir, fileName string, progressCb func(float64, float64, string)) (string, error) {
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return "", err
+	}
+
+	fileID, err := extractDriveFileID(fileURLOrID)
+	if err != nil {
+		return "", err
+	}
+
+	ctx := context.Background()
+	srv, err := drive.NewService(ctx, option.WithAPIKey(apiGdrive))
+	if err != nil {
+		return "", err
+	}
+
+	// Получаем метаданные файла (имя и размер для прогресс-бара)
+	meta, err := srv.Files.Get(fileID).Fields("name, size").Do()
+	if err != nil {
+		return "", fmt.Errorf("не удалось получить метаданные файла %s: %w", fileID, err)
+	}
+
+	if fileName == "" {
+		fileName = meta.Name
+	}
+	destPath := filepath.Join(destDir, fileName)
+
+	pw := &progressWriter{
+		globalTotal: meta.Size,
+		globalBase:  0,
+		lastTime:    time.Now(),
+		msg:         "Загрузка: " + fileName,
+		cb:          progressCb,
+	}
+
+	if err := downloadOne(srv, fileID, destPath, pw); err != nil {
+		return "", err
+	}
+
+	return destPath, nil
+}
+
 // ======================
 // загрузка пакетов
 // ======================
@@ -347,20 +422,14 @@ func downloadFileToPath(url, destPath, fileName string, progressCb func(float64,
 
 const (
 	UpdateFolderID            string = "1JUOctbsugh2IIEUCWcBkupXYVYoJMg4G"
-	YandexPrefixURL           string = "https://disk.yandex.ru/d/y3mx1DXn83CbgQ"
 	SteamFixID                string = "17BUNJj1akU-ktCOK7iDVErFMZJK6_sfQ"
 	CommunityShaderURL        string = "https://github.com/community-shaders/skyrim-community-shaders/releases/download/v1.8.4/CommunityShaders-2026-08-26T23-47Z.zip"
 	CommunityShaderUpsacleURL string = "https://github.com/community-shaders/skyrim-community-shaders/releases/download/v1.8.4/Upscaling-2026-08-26T23-47Z.zip"
-	GEProtonUrl               string = "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-6/GE-Proton11-6-x86_64.tar.gz"
-	DotNet6Url                string = "https://aka.ms/dotnet/6.0/windowsdesktop-runtime-win-x64.exe"
-	DotNet48Url               string = "https://dotnet.microsoft.com/en-us/download/dotnet-framework/thank-you/net48-offline-installer"
-	VCRedist2022x64Url        string = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-	VCRedist2022x86Url        string = "https://aka.ms/vs/17/release/vc_redist.x86.exe"
-	VCRedist2013x64Url        string = "https://aka.ms/highdpimfc2013x64enu"
-	VCRedist2012x64Url        string = "https://download.microsoft.com/download/1/6/B/16B06F60-3B20-4FF2-B699-5E9B7962F9AE/VSU_4/vcredist_x64.exe"
-	VCRedist2010x64Url        string = "https://download.microsoft.com/download/1/6/5/165255E7-1014-4D0A-B094-B6A430A6BFFC/vcredist_x64.exe"
+	Wine                      string = "https://drive.google.com/file/d/1j7WBjcAWqnkwjexdQsrEhpu-8c3IyCPA/view?usp=sharing"
+	Prefix                    string = "https://drive.google.com/file/d/10rVtQUeOQ5N3-n_OoAvMAgKzOOMZm5u4/view?usp=sharing"
 	// Надобности в них не было оставлю на всякий
 	// InnoExtract            string = "https://github.com/dscharrer/innoextract/releases/download/1.9/innoextract-1.9-linux.tar.xz" unused
+	// YandexPrefixURL           string = "https://disk.yandex.ru/d/y3mx1DXn83CbgQ"
 )
 
 func alreadyDownloaded(destDir, key string) bool {
@@ -488,7 +557,7 @@ func DownloadSteamfix(gameRoot string, forceDownload bool, progressCb func(float
 		var paths []string
 		paths, err := DownloadDriveFolder(SteamFixID, destDir, progressCb)
 		if err != nil {
-			return fmt.Errorf("ошибка получения префикса wine повторите попытку позже %s", err)
+			return fmt.Errorf("ошибка получения префикса SteamFIX повторите попытку позже %s", err)
 		}
 		return RewriteStatus(destDir, key, paths...)
 	}
@@ -496,18 +565,16 @@ func DownloadSteamfix(gameRoot string, forceDownload bool, progressCb func(float
 	return nil
 }
 
-func DownloadGEProton(gameRoot string, forceDownload bool, progressCb func(float64, float64, string)) error {
+func DownloadWine(gameRoot string, forceDownload bool, progressCb func(float64, float64, string)) error {
 	destDir := filepath.Join(gameRoot, "download")
-	key := "GE-Proton"
+	key := "Wine"
 	if !alreadyDownloaded(destDir, key) || forceDownload {
 		removeDownloadedFiles(destDir, key)
-		var path string
-		path, err := DownloadURL(GEProtonUrl, destDir, progressCb)
+		path, err := DownloadDriveFile(Wine, destDir, "", progressCb)
 		if err != nil {
-			return fmt.Errorf("Ошибка загрузки GE-Proton повторите попытку позже %s", err)
+			return fmt.Errorf("ошибка загрузки Wine, повторите попытку позже: %w", err)
 		}
 		return RewriteStatus(destDir, key, path)
-
 	}
 	return nil
 }
@@ -517,14 +584,12 @@ func DownloadPrefix(gameRoot string, forceDownload bool, progressCb func(float64
 	key := "prefix"
 	if !alreadyDownloaded(destDir, key) || forceDownload {
 		removeDownloadedFiles(destDir, key)
-		var path string
-		path, err := DownloadYandex(YandexPrefixURL, destDir, "pfx dotnet.7z", progressCb)
+		path, err := DownloadDriveFile(Prefix, destDir, "", progressCb)
 		if err != nil {
-			return fmt.Errorf("ошибка загрузки префикса с Яндекс.Диска: %w", err)
+			return fmt.Errorf("ошибка загрузки префикса, повторите попытку позже: %w", err)
 		}
 		return RewriteStatus(destDir, key, path)
 	}
-
 	return nil
 }
 

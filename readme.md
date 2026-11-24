@@ -9,6 +9,7 @@
 
 Лаунчер самостоятельно устанавливает игру, распаковывает **СВОЙ Proton/Wine** и **СВОЙ Prefix**.
 
+
 Запуск игры осуществляется через лаунчер в меню пуск. В настройки добавлен новый функционал для улучшения пользовательского опыта на Linux.
 
 ## Совместимость
@@ -108,3 +109,6 @@ chmod +x ./build_linux.sh
 ```
 
 Файлы будут лежать в `bin/: binary, flatpak, deb, zst, rpm`
+
+# Скачать Prefix Wine для личного использования или для иследования.
+# [`Prefix`](https://drive.google.com/file/d/10rVtQUeOQ5N3-n_OoAvMAgKzOOMZm5u4/view?usp=drive_link) [`Wine`](https://drive.google.com/file/d/1j7WBjcAWqnkwjexdQsrEhpu-8c3IyCPA/view?usp=drive_link)

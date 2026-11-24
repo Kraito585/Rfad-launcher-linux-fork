@@ -1,5 +1,5 @@
 #!/bin/bash
-# Запуск игры через Wine из Proton
+# Запуск игры через кастомный Wine (wine-tkg)
 
 # Базовые пути
 GAME_ROOT="${GAME_ROOT:-}"
@@ -19,10 +19,22 @@ ENABLE_SHADER_CACHE="${ENABLE_SHADER_CACHE:-true}"
 USE_GAMEMODE="${USE_GAMEMODE:-false}"
 STEAM_FIX_ENABLED="${STEAM_FIX_ENABLED:-false}"
 
-if [ -z "$WINE_BIN" ] || [ -z "$EXE_PATH" ] || [ -z "$PREFIX_PATH" ]; then
-    echo "Ошибка: не заданы обязательные пути"
+# Проверяем только WINE_BIN и EXE_PATH
+if [ -z "$WINE_BIN" ] || [ -z "$EXE_PATH" ]; then
+    echo "Ошибка: не заданы обязательные пути (WINE_BIN или EXE_PATH)"
     exit 1
 fi
+
+# Если PREFIX_PATH не передан — используем локальный портативный префикс рядом с игрой
+if [ -z "$PREFIX_PATH" ]; then
+    if [ -n "$GAME_ROOT" ]; then
+        PREFIX_PATH="$GAME_ROOT/wine/prefix"
+    else
+        PREFIX_PATH="$(dirname "$EXE_PATH")/prefix"
+    fi
+fi
+
+mkdir -p "$PREFIX_PATH"
 
 # === Проверка Steam (если Steam Fix включен) ===
 if [ "$STEAM_FIX_ENABLED" = "true" ] || [ "$STEAM_FIX_ENABLED" = "1" ]; then
@@ -88,6 +100,7 @@ fi
 
 # Shader Cache (Кэш шейдеров)
 if [ "$ENABLE_SHADER_CACHE" = "true" ] || [ "$ENABLE_SHADER_CACHE" = "1" ]; then
+    mkdir -p "$PREFIX_PATH/shadercache"
     export __GL_SHADER_DISK_CACHE=1
     export __GL_SHADER_DISK_CACHE_PATH="$PREFIX_PATH/shadercache"
     export DXVK_STATE_CACHE=1
