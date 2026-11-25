@@ -364,27 +364,34 @@ func clearShaderCache(gameRoot string) {
 
 	// 1. Папка кэша, которую мы задаем в start.sh
 	customCachePath := filepath.Join(prefixPath, "shadercache")
+	if err := os.RemoveAll(customCachePath); err == nil {
+		os.MkdirAll(customCachePath, 0755)
+	}
 
-	// 2. Дефолтная папка DXVK в Windows (та, что мелькает в логе)
-	appDataDxvkPath := filepath.Join(prefixPath, "drive_c", "users", "steamuser", "AppData", "Local", "dxvk")
-
-	pathsToClean := []string{customCachePath, appDataDxvkPath}
-
-	for _, targetDir := range pathsToClean {
-		// Сносим папку с кэшем и тут же создаем пустую
-		if err := os.RemoveAll(targetDir); err == nil {
-			os.MkdirAll(targetDir, 0755)
+	// 2. Дефолтная папка DXVK для всех пользователей в префиксе (не только steamuser)
+	usersDir := filepath.Join(prefixPath, "drive_c", "users")
+	if userEntries, err := os.ReadDir(usersDir); err == nil {
+		for _, u := range userEntries {
+			if !u.IsDir() || strings.EqualFold(u.Name(), "Public") {
+				continue
+			}
+			appDataDxvkPath := filepath.Join(usersDir, u.Name(), "AppData", "Local", "dxvk")
+			if err := os.RemoveAll(appDataDxvkPath); err == nil {
+				os.MkdirAll(appDataDxvkPath, 0755)
+			}
 		}
 	}
 
-	// 3. На всякий случай ищем и удаляем файлы *.dxvk-cache в корне игры
-	entries, err := os.ReadDir(gameRoot)
-	if err == nil {
+	// 3. Кэш ENB и старые файлы *.dxvk-cache в корне игры
+	os.RemoveAll(filepath.Join(gameRoot, "enbcache"))
+
+	if entries, err := os.ReadDir(gameRoot); err == nil {
 		for _, e := range entries {
 			if !e.IsDir() && strings.HasSuffix(e.Name(), ".dxvk-cache") {
 				os.Remove(filepath.Join(gameRoot, e.Name()))
 			}
 		}
 	}
+
 	slog.Info("Кэш шейдеров DXVK успешно очищен")
 }

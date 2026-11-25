@@ -9,45 +9,76 @@ import (
 	"strings"
 )
 
+func setEnv(base []string, overrides map[string]string) []string {
+	out := make([]string, 0, len(base)+len(overrides))
+	for _, kv := range base {
+		k, _, ok := strings.Cut(kv, "=")
+		if ok {
+			if _, exists := overrides[k]; exists {
+				continue
+			}
+		}
+		out = append(out, kv)
+	}
+	for k, v := range overrides {
+		out = append(out, k+"="+v)
+	}
+	return out
+}
+
 func RecoverPrefix(gameRoot string) error {
 	prefixTarget := filepath.Join(gameRoot, "wine", "prefix")
 	prefixPath := filepath.Join(prefixTarget, "pfx")
 
 	slog.Info("Запуск лечения префикса", "prefixPath", prefixPath)
 
-	// 1. Удаляем битые симлинки
 	dosdevicesPath := filepath.Join(prefixPath, "dosdevices")
 	if err := os.RemoveAll(dosdevicesPath); err != nil {
 		slog.Warn("Не удалось очистить dosdevices (не критично, продолжаем)", "error", err)
 	}
 
-	// 2. Пути к wine-tkg
 	wineBinDir := filepath.Join(gameRoot, "wine", "bin")
 	wineBin := filepath.Join(wineBinDir, "wine")
+	wineserverBin := filepath.Join(wineBinDir, "wineserver")
 	wineLibDir := filepath.Join(gameRoot, "wine", "lib")
 
 	if _, err := os.Stat(wineBin); os.IsNotExist(err) {
 		return fmt.Errorf("wine не найден, невозможно инициализировать префикс: %s", wineBin)
 	}
 
-	wineDllPath := filepath.Join(wineLibDir, "wine")
-	ldLibraryPath := wineLibDir + ":" + os.Getenv("LD_LIBRARY_PATH")
+	wineDllPath := strings.Join([]string{
+		filepath.Join(wineLibDir, "wine", "x86_64-unix"),
+		filepath.Join(wineLibDir, "wine", "x86_64-windows"),
+		filepath.Join(wineLibDir, "wine", "i386-unix"),
+		filepath.Join(wineLibDir, "wine", "i386-windows"),
+	}, ":")
 
-	// 3. Окружение для wineboot
-	env := os.Environ()
-	env = append(env,
-		"WINEPREFIX="+prefixPath,
-		"WINEDLLPATH="+wineDllPath,
-		"LD_LIBRARY_PATH="+ldLibraryPath,
-		"PATH="+wineBinDir+":"+os.Getenv("PATH"),
-		"WINEDLLOVERRIDES=mscoree,mshtml=",
-		"WINEDEBUG=-all",
-	)
+	ldParts := []string{
+		filepath.Join(wineLibDir, "x86_64-linux-gnu"),
+		filepath.Join(wineLibDir, "i386-linux-gnu"),
+		wineLibDir,
+	}
+	if curLD := os.Getenv("LD_LIBRARY_PATH"); curLD != "" {
+		ldParts = append(ldParts, curLD)
+	}
 
-	// 4. Выполняем wineboot -u
+	env := setEnv(os.Environ(), map[string]string{
+		"WINEPREFIX":       prefixPath,
+		"WINEDLLPATH":      wineDllPath,
+		"LD_LIBRARY_PATH":  strings.Join(ldParts, ":"),
+		"PATH":             wineBinDir + ":" + os.Getenv("PATH"),
+		"WINEDLLOVERRIDES": "mscoree,mscoreei,mshtml=;uiautomationcore=;tabtip.exe=",
+		"WINEDEBUG":        "-all",
+	})
+
 	cmd := utils.NewHostCommand(env, wineBin, "wineboot", "-u")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("ошибка при лечении префикса (wineboot): %w", err)
+	}
+
+	// Ждём завершения всех фоновых процессов wineboot (rundll32/services) и записи .update-timestamp
+	if _, err := os.Stat(wineserverBin); err == nil {
+		_ = utils.NewHostCommand(env, wineserverBin, "-w").Run()
 	}
 
 	usersDir := filepath.Join(prefixPath, "drive_c", "users")
@@ -62,6 +93,10 @@ func RecoverPrefix(gameRoot string) error {
 		}
 	}
 
+	if err := InjectSteamBridge(gameRoot); err != nil {
+		slog.Warn("Не удалось скопировать компоненты моста Steam", "err", err)
+	}
+
 	injectedDlls, err := InjectLibraries(gameRoot)
 	if err != nil {
 		slog.Warn("Ошибка инъекции библиотек в system32", "err", err)
@@ -73,7 +108,60 @@ func RecoverPrefix(gameRoot string) error {
 		}
 	}
 
+	if _, err := os.Stat(wineserverBin); err == nil {
+		_ = utils.NewHostCommand(env, wineserverBin, "-w").Run()
+	}
+
 	slog.Info("Префикс успешно инициализирован и готов к запуску")
+	return nil
+}
+
+func InjectSteamBridge(gameRoot string) error {
+	wineLibDir := filepath.Join(gameRoot, "wine", "lib", "wine")
+	pfxDir := filepath.Join(gameRoot, "wine", "prefix", "pfx")
+	sys32 := filepath.Join(pfxDir, "drive_c", "windows", "system32")
+	syswow64 := filepath.Join(pfxDir, "drive_c", "windows", "syswow64")
+
+	pairs := [][2]string{
+		{filepath.Join(wineLibDir, "x86_64-windows", "lsteamclient.dll"), filepath.Join(sys32, "lsteamclient.dll")},
+		{filepath.Join(wineLibDir, "x86_64-windows", "steam.exe"), filepath.Join(sys32, "steam.exe")},
+		{filepath.Join(wineLibDir, "i386-windows", "lsteamclient.dll"), filepath.Join(syswow64, "lsteamclient.dll")},
+		{filepath.Join(wineLibDir, "i386-windows", "steam.exe"), filepath.Join(syswow64, "steam.exe")},
+	}
+	for _, p := range pairs {
+		if _, err := os.Stat(p[0]); err != nil {
+			continue
+		}
+		_ = os.Remove(p[1])
+		if err := utils.CopyFile(p[0], p[1]); err != nil {
+			return err
+		}
+	}
+
+	// Копируем клиентские DLL из legacycompat нативного Steam в префикс
+	homeDir, _ := os.UserHomeDir()
+	steamDirs := []string{
+		filepath.Join(homeDir, ".local", "share", "Steam"),
+		filepath.Join(homeDir, ".steam", "steam"),
+	}
+	var legacyDir string
+	for _, d := range steamDirs {
+		cand := filepath.Join(d, "legacycompat")
+		if info, err := os.Stat(cand); err == nil && info.IsDir() {
+			legacyDir = cand
+			break
+		}
+	}
+	if legacyDir != "" {
+		dstSteam := filepath.Join(pfxDir, "drive_c", "Program Files (x86)", "Steam")
+		_ = os.MkdirAll(dstSteam, 0755)
+		for _, dll := range []string{"steamclient.dll", "steamclient64.dll", "GameOverlayRenderer.dll", "GameOverlayRenderer64.dll"} {
+			src := filepath.Join(legacyDir, dll)
+			if _, err := os.Stat(src); err == nil {
+				_ = utils.CopyFile(src, filepath.Join(dstSteam, dll))
+			}
+		}
+	}
 	return nil
 }
 

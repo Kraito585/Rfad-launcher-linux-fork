@@ -1,12 +1,14 @@
 package prefix_install
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"rfad-launcher-linux/src-wails/utils"
 	"rfad-launcher-linux/src-wails/utils/recovery"
+	"rfad-launcher-linux/src-wails/utils/steam_drm_switch"
 	"strings"
 )
 
@@ -97,6 +99,17 @@ func UnpackPrefix(gameRoot string, unpackCb func(float64, string)) error {
 
 	if err := recovery.RecoverPrefix(gameRoot); err != nil {
 		return fmt.Errorf("ошибка при лечении префикса (wineboot): %w", err)
+	}
+
+	if unpackCb != nil {
+		unpackCb(0.98, "Настройка моста Steam...")
+	}
+	if err := steam_drm_switch.EnsureSteamBridge(gameRoot); err != nil {
+		if errors.Is(err, steam_drm_switch.ErrSteamNotInstalled) || errors.Is(err, steam_drm_switch.ErrSteamFilesNotFound) {
+			slog.Info("Steam не найден или ещё не запускался, настройка моста Steam пропущена", "reason", err)
+		} else {
+			slog.Warn("Не удалось настроить мост Steam после распаковки префикса", "err", err)
+		}
 	}
 
 	slog.Info("Префикс успешно распакован и настроен", "target", pfxTarget)

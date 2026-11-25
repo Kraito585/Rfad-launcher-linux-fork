@@ -620,7 +620,11 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 	case "fsr":
 		cfg, err := utils.GetLauncherConfig()
 		if err != nil {
-			slog.Error("Не удалось прочитать конфиг перед сменой FSR уровня", "error", err)
+			slog.Error("Не удалось прочитать конфиг перед сменой FSR", "error", err)
+			return err
+		}
+
+		if err := utils.SetOneSetting("FSR", value); err != nil {
 			return err
 		}
 
@@ -630,7 +634,7 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 			return err
 		}
 		application.Get().Event.Emit("update-status", map[string]string{"status": "process-finished"})
-		return utils.SetOneSetting("FSR", value)
+		return nil
 
 	case "shaderCache":
 		utils.SetOneSetting("ShaderCache", value)
@@ -649,6 +653,7 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 		application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-started"})
 		if err := steam_drm_switch.ToggleSteamDRM(gameRoot, isSteamFix, unpackCb); err != nil {
 			application.Get().Event.Emit("update-status", map[string]string{"status": "process-error"})
+			a.ShowMessageDialog("Ошибка Steam DRM", err.Error())
 			return err
 		}
 		application.Get().Event.Emit("update-status", map[string]string{"status": "process-finished"})
@@ -851,6 +856,12 @@ func (a *App) RecoverComponent(key string, force bool) error {
 
 		application.Get().Event.Emit("update-status", map[string]string{"status": "process-finished"})
 		slog.Info("Proton и Prefix успешно переустановлены")
+
+		if cfg, err := utils.GetLauncherConfig(); err == nil && cfg.SteamFix {
+			if err := steam_drm_switch.EnsureSteamBridge(gameRoot); err != nil {
+				slog.Warn("Не удалось восстановить мост Steam после переустановки префикса", "err", err)
+			}
+		}
 
 	case "prefix":
 		if force {
