@@ -1,6 +1,7 @@
 package prefix_install
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -100,12 +101,14 @@ func UnpackPrefix(gameRoot string, unpackCb func(float64, string)) error {
 		return fmt.Errorf("ошибка при лечении префикса (wineboot): %w", err)
 	}
 
-	if cfg, err := utils.GetLauncherConfig(); err == nil && cfg.SteamFix {
-		if unpackCb != nil {
-			unpackCb(0.98, "Восстановление моста Steam...")
-		}
-		if err := steam_drm_switch.EnsureSteamBridge(gameRoot); err != nil {
-			slog.Warn("Не удалось восстановить мост Steam после распаковки префикса", "err", err)
+	if unpackCb != nil {
+		unpackCb(0.98, "Настройка моста Steam...")
+	}
+	if err := steam_drm_switch.EnsureSteamBridge(gameRoot); err != nil {
+		if errors.Is(err, steam_drm_switch.ErrSteamNotInstalled) || errors.Is(err, steam_drm_switch.ErrSteamFilesNotFound) {
+			slog.Info("Steam не найден или ещё не запускался, настройка моста Steam пропущена", "reason", err)
+		} else {
+			slog.Warn("Не удалось настроить мост Steam после распаковки префикса", "err", err)
 		}
 	}
 

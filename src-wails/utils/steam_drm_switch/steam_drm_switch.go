@@ -1,11 +1,18 @@
 package steam_drm_switch
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"rfad-launcher-linux/src-wails/utils"
+)
+
+var (
+	ErrSteamNotInstalled  = errors.New("Steam не установлен на устройстве. Установите Steam, запустите его хотя бы один раз и повторите попытку")
+	ErrSteamFilesNotFound = errors.New("не найдены файлы клиента Steam (legacycompat/steamclient64.dll). Запустите Steam хотя бы один раз для загрузки его компонентов и повторите попытку")
 )
 
 // isSteamInstalled проверяет, установлен ли нативный или Flatpak-клиент Steam.
@@ -53,25 +60,61 @@ func findSteamLegacyCompatDir() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("не найдены файлы клиента Steam (legacycompat/steamclient64.dll). Запустите Steam хотя бы один раз для загрузки его компонентов и повторите попытку")
+	return "", ErrSteamFilesNotFound
+}
+
+// Даная функция необходима /src-wails/utils/utils.go:CopyFile() создаёт Hardlink что может привести к неработоспасобности патча
+func copyRegularFile(src, dst string, mode os.FileMode) error {
+	realSrc, err := filepath.EvalSymlinks(src)
+	if err != nil {
+		return fmt.Errorf("не удалось разрешить путь %s: %w", src, err)
+	}
+
+	in, err := os.Open(realSrc)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+
+	_ = os.Chmod(dst, 0644)
+	if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("не удалось удалить старый файл %s: %w", dst, err)
+	}
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		_ = os.Remove(dst)
+		return err
+	}
+
+	return out.Close()
 }
 
 // EnsureSteamBridge проверяет наличие Steam, удаляет битые симлинки в префиксе
 // и копирует реальные библиотеки моста Steam в префикс игры.
 func EnsureSteamBridge(gameRoot string) error {
-	if !isSteamInstalled() {
-		return fmt.Errorf("Steam не установлен на устройстве. Установите Steam, запустите его хотя бы один раз и повторите попытку")
-	}
+	slog.Info("Запуск настройки моста Steam в префиксе", "gameRoot", gameRoot)
 
 	legacyDir, err := findSteamLegacyCompatDir()
 	if err != nil {
+		if errors.Is(err, ErrSteamFilesNotFound) && !isSteamInstalled() {
+			return ErrSteamNotInstalled
+		}
 		return err
 	}
 
 	pfxDir := filepath.Join(gameRoot, "wine", "prefix", "pfx")
 	wineLibDir := filepath.Join(gameRoot, "wine", "lib", "wine")
 
-	// 1. Гарантируем наличие lsteamclient.dll и steam.exe в system32 / syswow64
 	bridgePairs := [][2]string{
 		{filepath.Join(wineLibDir, "x86_64-windows", "lsteamclient.dll"), filepath.Join(pfxDir, "drive_c", "windows", "system32", "lsteamclient.dll")},
 		{filepath.Join(wineLibDir, "x86_64-windows", "steam.exe"), filepath.Join(pfxDir, "drive_c", "windows", "system32", "steam.exe")},
@@ -83,21 +126,12 @@ func EnsureSteamBridge(gameRoot string) error {
 		if _, err := os.Stat(p[0]); err != nil {
 			continue
 		}
-		if err := os.MkdirAll(filepath.Dir(p[1]), 0755); err != nil {
-			return fmt.Errorf("не удалось создать каталог %s: %w", filepath.Dir(p[1]), err)
-		}
-		_ = os.Remove(p[1])
-		if err := utils.CopyFile(p[0], p[1]); err != nil {
+		if err := copyRegularFile(p[0], p[1], 0644); err != nil {
 			return fmt.Errorf("не удалось скопировать %s: %w", filepath.Base(p[0]), err)
 		}
 	}
 
-	// 2. Удаляем битые симлинки и копируем реальные DLL клиента Steam из legacycompat
 	dstSteamDir := filepath.Join(pfxDir, "drive_c", "Program Files (x86)", "Steam")
-	if err := os.MkdirAll(dstSteamDir, 0755); err != nil {
-		return fmt.Errorf("не удалось создать папку Steam в префиксе: %w", err)
-	}
-
 	steamDlls := []string{
 		"steamclient64.dll",
 		"steamclient.dll",
@@ -109,17 +143,15 @@ func EnsureSteamBridge(gameRoot string) error {
 		src := filepath.Join(legacyDir, dll)
 		dst := filepath.Join(dstSteamDir, dll)
 
-		// Обязательно удаляем старый файл/симлинк, чтобы CopyFile не писал по цели симлинка
-		_ = os.Remove(dst)
-
 		if _, err := os.Stat(src); err != nil {
+			_ = os.Remove(dst)
 			if dll == "steamclient64.dll" {
 				return fmt.Errorf("отсутствует обязательный файл %s", src)
 			}
 			continue
 		}
 
-		if err := utils.CopyFile(src, dst); err != nil {
+		if err := copyRegularFile(src, dst, 0755); err != nil {
 			return fmt.Errorf("ошибка копирования %s в префикс: %w", dll, err)
 		}
 	}
