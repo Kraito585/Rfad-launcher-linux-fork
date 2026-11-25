@@ -425,11 +425,12 @@ const (
 	SteamFixID                string = "17BUNJj1akU-ktCOK7iDVErFMZJK6_sfQ"
 	CommunityShaderURL        string = "https://github.com/community-shaders/skyrim-community-shaders/releases/download/v1.8.4/CommunityShaders-2026-08-26T23-47Z.zip"
 	CommunityShaderUpsacleURL string = "https://github.com/community-shaders/skyrim-community-shaders/releases/download/v1.8.4/Upscaling-2026-08-26T23-47Z.zip"
-	Wine                      string = "https://drive.google.com/file/d/1j7WBjcAWqnkwjexdQsrEhpu-8c3IyCPA/view?usp=sharing"
+	Wine                      string = "https://drive.google.com/file/d/1BXTwFlgukwQbsnbrkhNPepXWQ9kO5gwj/view?usp=sharing" //Proton
 	Prefix                    string = "https://drive.google.com/file/d/10rVtQUeOQ5N3-n_OoAvMAgKzOOMZm5u4/view?usp=sharing"
+	// Wine                   string = "https://drive.google.com/file/d/1j7WBjcAWqnkwjexdQsrEhpu-8c3IyCPA/view?usp=sharing" //Wine
 	// Надобности в них не было оставлю на всякий
 	// InnoExtract            string = "https://github.com/dscharrer/innoextract/releases/download/1.9/innoextract-1.9-linux.tar.xz" unused
-	// YandexPrefixURL           string = "https://disk.yandex.ru/d/y3mx1DXn83CbgQ"
+	// YandexPrefixURL        string = "https://disk.yandex.ru/d/y3mx1DXn83CbgQ"
 )
 
 func alreadyDownloaded(destDir, key string) bool {

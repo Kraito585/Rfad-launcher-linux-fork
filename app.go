@@ -620,7 +620,11 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 	case "fsr":
 		cfg, err := utils.GetLauncherConfig()
 		if err != nil {
-			slog.Error("Не удалось прочитать конфиг перед сменой FSR уровня", "error", err)
+			slog.Error("Не удалось прочитать конфиг перед сменой FSR", "error", err)
+			return err
+		}
+
+		if err := utils.SetOneSetting("FSR", value); err != nil {
 			return err
 		}
 
@@ -630,7 +634,7 @@ func (a *App) UpdateSetting(key string, value interface{}) error {
 			return err
 		}
 		application.Get().Event.Emit("update-status", map[string]string{"status": "process-finished"})
-		return utils.SetOneSetting("FSR", value)
+		return nil
 
 	case "shaderCache":
 		utils.SetOneSetting("ShaderCache", value)

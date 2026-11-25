@@ -37,6 +37,7 @@
   ![Здесь должно быть изображение](https://ik.imagekit.io/3o5rv0kou/Screenshot_20261124_204223.png)
 - Исправлена ошибка, из-за которой при первом запуске игры происходил вылет. Ошибка была связана с тем, что в префиксе отсутствовали директории `drive_c/users/{username}/AppData/Local/Skyrim Special Edition` и `drive_c/users/{username}/Documents/My Games/Skyrim Special Edition`. [`src-wails/utils/recovery/recovery.go:RecoverPrefix()`](https://github.com/Kraito585/Rfad-launcher-linux-fork/blob/main/src-wails/utils/recovery/recovery.go#L53) теперь решает и эту проблему.
 - Очередные множественные изменения в прослойке совместимости с Flatpak.
+- Исправлена ошибка из за которой при отключении FSR игра могла открыватся в оконом режиме.
 
 ## Послесловие
 

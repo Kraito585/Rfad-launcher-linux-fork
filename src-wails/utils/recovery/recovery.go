@@ -33,7 +33,8 @@ func RecoverPrefix(gameRoot string) error {
 	wineDllPath := filepath.Join(wineLibDir, "wine")
 	ldLibraryPath := wineLibDir + ":" + os.Getenv("LD_LIBRARY_PATH")
 
-	// 3. Окружение для wineboot
+	// 3. Окружение для wineboot-u
+
 	env := os.Environ()
 	env = append(env,
 		"WINEPREFIX="+prefixPath,
