@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, nextTick, onMounted, onUnmounted } from "vue";
 // ИСПРАВЛЕНИЕ: Импортируем все функции как модуль App, точно так же, как в index.vue
 import * as App from "~/bindings/rfad-launcher-linux/app";
 import MessageBox from "~/components/base/MessageBox.vue";
@@ -10,6 +10,7 @@ const emit = defineEmits<{
   (e: "close"): void;
 }>();
 
+const rootRef = ref<HTMLElement | null>(null);
 const modalRef = ref<HTMLElement | null>(null);
 const isLoading = ref(true);
 
@@ -42,6 +43,10 @@ onMounted(async () => {
     console.error("Ошибка загрузки настроек:", e);
   } finally {
     isLoading.value = false;
+    await nextTick();
+    if (document.documentElement.classList.contains("gamepad-mode")) {
+      rootRef.value?.querySelector<HTMLElement>("[data-gp-autofocus]")?.focus();
+    }
   }
 });
 
@@ -96,6 +101,7 @@ const sendToBackend = async (key: string, value: boolean | string) => {
 
 <template>
   <div
+    ref="rootRef"
     class="fixed inset-0 z-[100000] bg-black/70 backdrop-blur-sm flex items-center justify-center px-4"
   >
     <MessageBox ref="modalRef" class="w-full max-w-2xl">
@@ -115,7 +121,8 @@ const sendToBackend = async (key: string, value: boolean | string) => {
           </div>
           <button
             type="button"
-            class="text-secondary hover:text-primary transition-colors p-1"
+            data-gp-close
+            class="text-secondary hover:text-primary transition-colors p-1.5 rounded-full flex items-center justify-center"
             @click="emit('close')"
           >
             <CloseIcon class="w-6 h-6" />
@@ -135,6 +142,7 @@ const sendToBackend = async (key: string, value: boolean | string) => {
             <div class="setting-row">
               <span class="setting-label">MangoHud</span>
               <button
+                data-gp-autofocus
                 @click="toggleSetting('mangoHud')"
                 :class="[
                   'toggle-btn',

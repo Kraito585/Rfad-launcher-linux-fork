@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,27 +47,34 @@ type GameSettings struct {
 const systemConfigPath = "~/.config/rfad-launcher/launcher.conf"
 
 type App struct {
+	gamepadCancel context.CancelFunc
 }
 
 func NewApp() *App {
 	return &App{}
 }
 
-func (a *App) startup() {
+var _ application.ServiceStartup = (*App)(nil)
+
+func (a *App) startup(ctx context.Context) {
 	slog.Info("App started")
+	gpCtx, cancel := context.WithCancel(ctx)
+	a.gamepadCancel = cancel
+	go startGamepadMonitor(gpCtx)
 }
 
 func (a *App) shutdown() {
 	slog.Info("App shutting down")
+	if a.gamepadCancel != nil {
+		a.gamepadCancel()
+	}
 }
 
-// ServiceStartup вызывается Wails при старте приложения.
-func (a *App) ServiceStartup(options application.ServiceOptions) error {
-	a.startup()
+func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
+	a.startup(ctx)
 	return nil
 }
 
-// ServiceShutdown вызывается Wails при завершении приложения.
 func (a *App) ServiceShutdown() error {
 	a.shutdown()
 	return nil

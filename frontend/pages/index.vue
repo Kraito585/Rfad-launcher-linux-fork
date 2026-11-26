@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { Events } from "@wailsio/runtime";
 import * as App from "~/bindings/rfad-launcher-linux/app";
 
@@ -20,6 +20,8 @@ const installStatus = ref("");
 const needsFirstInstall = ref(false);
 const needsMigration = ref(false);
 
+const showExitModal = ref(false);
+
 // Компоненты
 import DiscordIcon from "~/components/icons/Discord.vue";
 import Cog from "~/components/icons/Cog.vue";
@@ -36,6 +38,46 @@ import SettingsModal from "~/components/SettingsModal.vue";
 import RemoteErrorMessage from "~/components/RemoteErrorMessage.vue";
 import NetworkErrorMessage from "~/components/NetworkErrorMessage.vue";
 import ProtonTricksErrorMessage from "~/components/ProtonTricksErrorMessage.vue";
+
+const handleGamepadBack = (e: Event) => {
+  if (e.defaultPrevented) return;
+
+  if (showExitModal.value) {
+    showExitModal.value = false;
+    e.preventDefault();
+    return;
+  }
+  if (showRecoveryModal.value) {
+    showRecoveryModal.value = false;
+    e.preventDefault();
+    return;
+  }
+  if (isSettingsOpen.value) {
+    closeSettings();
+    e.preventDefault();
+    return;
+  }
+  if (showConfirmation.value) {
+    showConfirmation.value = false;
+    e.preventDefault();
+    return;
+  }
+  if (gamescopeError.value) {
+    gamescopeError.value = false;
+    e.preventDefault();
+    return;
+  }
+  if (protonTricksError.value) {
+    protonTricksError.value = false;
+    e.preventDefault();
+    return;
+  }
+
+  if (!showInstallModal.value) {
+    showExitModal.value = true;
+    e.preventDefault();
+  }
+};
 
 // ===== Модалка установки =====
 const selectMo2Path = async () => {
@@ -505,8 +547,11 @@ const checkPathStatus = async () => {
       : await App.GetMigrationStatus();
   }
 };
+
 // ===== Жизненный цикл =====
 onMounted(async () => {
+  window.addEventListener("gp-back", handleGamepadBack);
+
   firstStart.value = !localStorage.getItem("lastUpdate");
 
   try {
@@ -568,6 +613,10 @@ onMounted(async () => {
     isGameStarting.value = false;
   });
 });
+
+onUnmounted(() => {
+  window.removeEventListener("gp-back", handleGamepadBack);
+});
 </script>
 
 <template>
@@ -582,6 +631,7 @@ onMounted(async () => {
   <Transition name="fade-modal" appear>
     <div
       v-if="showInstallModal"
+      data-gp-modal
       class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-[100001]"
     >
       <div
@@ -621,6 +671,7 @@ onMounted(async () => {
             >
             <div class="flex">
               <input
+                data-gp-ignore
                 v-model="mo2Path"
                 class="flex-1 bg-gray-800 text-primary p-2 rounded-l border border-gray-700"
                 placeholder="Выберите файл..."
@@ -712,6 +763,7 @@ onMounted(async () => {
               >
               <div class="flex">
                 <input
+                  data-gp-ignore
                   v-model="mo2Path"
                   class="flex-1 bg-gray-800 text-primary p-2 rounded-l border border-gray-700"
                   placeholder="Выберите файл..."
@@ -732,6 +784,7 @@ onMounted(async () => {
               >
               <div class="flex">
                 <input
+                  data-gp-ignore
                   v-model="installerPath"
                   class="flex-1 bg-gray-800 text-primary p-2 rounded-l border border-gray-700"
                   placeholder="Выберите файл..."
@@ -752,6 +805,7 @@ onMounted(async () => {
               >
               <div class="flex">
                 <input
+                  data-gp-ignore
                   v-model="installPath"
                   class="flex-1 bg-gray-800 text-primary p-2 rounded-l border border-gray-700"
                   placeholder="Выберите папку..."
@@ -824,35 +878,35 @@ onMounted(async () => {
   >
     <div class="flex flex-row gap-6 z-40 w-full">
       <div class="flex flex-col justify-between min-h-full relative z-[100005]">
-        <CircleButton @click.left.prevent="openDiscord()">
+        <CircleButton data-gp-focusable @click.left.prevent="openDiscord()">
           <DiscordIcon class="w-9 text-secondary pointer-events-none" />
         </CircleButton>
 
-        <CircleButton @click.left.prevent="openTelegram()">
+        <CircleButton data-gp-focusable @click.left.prevent="openTelegram()">
           <Telegram
             class="w-7 mr-1 mt-[2px] text-secondary pointer-events-none"
           />
         </CircleButton>
 
-        <CircleButton @click.left.prevent="openVk()">
+        <CircleButton data-gp-focusable @click.left.prevent="openVk()">
           <Vk class="w-8 text-secondary pointer-events-none" />
         </CircleButton>
 
-        <CircleButton @click.left.prevent="openBoosty()">
+        <CircleButton data-gp-focusable @click.left.prevent="openBoosty()">
           <Boosty
             class="w-8 mb-[2px] ml-[2px] text-secondary pointer-events-none"
           />
         </CircleButton>
 
-        <CircleButton @click.left.prevent="openDb()">
+        <CircleButton data-gp-focusable @click.left.prevent="openDb()">
           <OpenBook class="w-8 text-secondary pointer-events-none" />
         </CircleButton>
 
-        <CircleButton @click="openExplorer">
+        <CircleButton data-gp-focusable @click="openExplorer">
           <FolderSmallStroke class="w-8 h-8 text-secondary" />
         </CircleButton>
 
-        <CircleButton @click="openMo2">
+        <CircleButton data-gp-focusable @click="openMo2">
           <MO2 class="w-10 ml-[1px] text-secondary" />
         </CircleButton>
       </div>
@@ -868,12 +922,14 @@ onMounted(async () => {
             <UpdateConfirmationMessage v-if="showConfirmation" class="w-full">
               <div class="flex flex-row justify-between w-full mt-2.5">
                 <div
+                  data-gp-focusable
                   class="font-bold hover:opacity-80 transition-opacity cursor-pointer"
                   @click="update()"
                 >
                   Продолжить
                 </div>
                 <div
+                  data-gp-focusable
                   class="font-bold text-secondary hover:opacity-80 transition-opacity cursor-pointer"
                   @click="showConfirmation = false"
                 >
@@ -910,6 +966,7 @@ onMounted(async () => {
             <ProtonTricksErrorMessage v-if="protonTricksError" class="w-full">
               <div class="flex flex-row justify-end w-full mt-2.5">
                 <div
+                  data-gp-focusable
                   class="font-bold text-secondary hover:opacity-80 transition-opacity cursor-pointer"
                   @click="protonTricksError = false"
                 >
@@ -920,6 +977,7 @@ onMounted(async () => {
             <GamescopeErrorMessage v-if="gamescopeError" class="w-full">
               <div class="flex flex-row justify-end w-full mt-2.5">
                 <div
+                  data-gp-focusable
                   class="font-bold text-secondary hover:opacity-80 transition-opacity cursor-pointer"
                   @click="gamescopeError = false"
                 >
@@ -934,12 +992,14 @@ onMounted(async () => {
             >
               <div class="flex flex-row justify-between w-full mt-2.5">
                 <div
+                  data-gp-focusable
                   class="font-bold hover:opacity-80 transition-opacity cursor-pointer"
                   @click="update()"
                 >
                   Обновить
                 </div>
                 <div
+                  data-gp-focusable
                   class="font-bold text-secondary hover:opacity-80 transition-opacity cursor-pointer"
                   @click="hideUpdate = true"
                 >
@@ -950,6 +1010,8 @@ onMounted(async () => {
           </transition-group>
           <div class="flex flex-row gap-2.5">
             <Button
+              data-gp-focusable
+              data-gp-autofocus
               @click="processButtonClick"
               class="font-bold text-4xl text-primary tracking-wider uppercase min-w-73"
               :class="{
@@ -1020,6 +1082,7 @@ onMounted(async () => {
         >
           <transition-group name="fade">
             <PatchComponent
+              data-gp-focusable
               v-for="patch in patches"
               :key="patch.version"
               :version="patch.version"
@@ -1035,13 +1098,55 @@ onMounted(async () => {
     </div>
     <img alt="Matrona" src="assets/image/Matrona.webp" class="matrona z-10" />
     <Transition name="fade-modal">
-      <SettingsModal v-if="isSettingsOpen" @close="closeSettings" />
+      <SettingsModal
+        v-if="isSettingsOpen"
+        data-gp-modal
+        @close="closeSettings"
+      />
     </Transition>
     <Transition name="fade-modal">
       <RecoveryModal
         v-if="showRecoveryModal"
+        data-gp-modal
         @close="showRecoveryModal = false"
       />
+    </Transition>
+    <Transition name="fade-modal">
+      <div
+        v-if="showExitModal"
+        data-gp-modal
+        class="fixed inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm z-[100010] px-4"
+        @click.self="showExitModal = false"
+      >
+        <div
+          class="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-sm w-full flex flex-col gap-5 text-primary shadow-2xl"
+        >
+          <div class="flex flex-col gap-1 text-center">
+            <h2 class="text-2xl font-bold tracking-wide">Выйти из лаунчера?</h2>
+            <p class="text-secondary text-sm">
+              Нажмите «Выйти» для закрытия приложения
+            </p>
+          </div>
+          <div class="flex gap-3">
+            <button
+              type="button"
+              data-gp-close
+              @click="showExitModal = false"
+              class="flex-1 bg-white/10 hover:bg-white/20 text-primary font-bold py-2.5 rounded-xl transition"
+            >
+              Отмена
+            </button>
+            <button
+              type="button"
+              data-gp-autofocus
+              @click="closeWindow"
+              class="flex-1 bg-primary text-gray-900 font-bold py-2.5 rounded-xl hover:bg-opacity-85 transition"
+            >
+              Выйти
+            </button>
+          </div>
+        </div>
+      </div>
     </Transition>
   </div>
 </template>

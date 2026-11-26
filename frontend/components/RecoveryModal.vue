@@ -53,6 +53,7 @@ const handleAction = async (target: string, action: string) => {
           <div class="font-semibold text-xl tracking-wide">Proton/Wine</div>
           <div class="flex gap-3">
             <button
+              data-gp-autofocus
               @click="handleAction('proton', 'reinstall')"
               :disabled="processing !== null"
               class="bg-white/10 hover:bg-white/20 disabled:opacity-50 px-4 py-2 rounded-lg transition font-medium"
@@ -104,6 +105,7 @@ const handleAction = async (target: string, action: string) => {
 
       <!-- Кнопка возврата -->
       <button
+        data-gp-close
         @click="emit('close')"
         class="mt-2 w-full bg-white/5 hover:bg-white/10 text-secondary hover:text-primary font-bold text-xl py-3 rounded-xl transition border border-transparent hover:border-white/10"
       >
