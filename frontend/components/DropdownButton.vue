@@ -7,6 +7,7 @@ import GamepadIcon from "~/components/icons/Gamepad.vue";
 import Cog from "~/components/icons/Cog.vue";
 import Wrench from "~/components/icons/Wrench.vue";
 import Terminal from "~/components/icons/Terminal.vue";
+import Steam from "~/components/icons/Steam.vue";
 
 interface Events {
   (e: "update"): void;
@@ -16,6 +17,7 @@ interface Events {
   (e: "start_game"): void;
   (e: "open-recovery"): void;
   (e: "open-protontricks"): void;
+  (e: "add-to-steam"): void;
 }
 
 const props = defineProps<{
@@ -54,7 +56,8 @@ const processClick = (
     | "start_game"
     | "openSettings"
     | "open-recovery"
-    | "open-protontricks",
+    | "open-protontricks"
+    | "add-to-steam",
 ) => {
   emit(e as any);
   isDropdownOpen.value = false;
@@ -142,6 +145,14 @@ const processClick = (
           >
             <Terminal class="w-4 h-4" />
             Protontricks
+          </div>
+          <div
+            data-gp-focusable
+            class="flex flex-row gap-2 items-center cursor-pointer hover:opacity-75 transition-opacity rounded px-1.5 py-0.5"
+            @click="processClick('add-to-steam')"
+          >
+            <Steam class="w-4 h-4" />
+            Добавить в Steam
           </div>
         </div>
       </div>

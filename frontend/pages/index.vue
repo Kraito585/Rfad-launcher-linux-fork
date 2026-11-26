@@ -168,6 +168,14 @@ const openProtontricks = async () => {
   }
 };
 
+const addToSteam = async () => {
+  try {
+    await App.AddToSteam();
+  } catch (e) {
+    console.error("Ошибка добавления в Steam:", e);
+  }
+};
+
 // ===== Вспомогательная функция загрузки версий =====
 const loadVersions = async () => {
   const local = await App.GetLocalVersion();
@@ -654,7 +662,7 @@ onUnmounted(() => {
               Указать путь
             </button>
             <button
-              @click="installStep = 2"
+              @click="goToInstall(false)"
               class="w-full bg-primary text-gray-900 font-bold py-2 rounded hover:bg-opacity-80 transition"
             >
               Установить игру
@@ -699,85 +707,10 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <!-- ШАГ 2: Портировать MO2? -->
-        <div v-else-if="installStep === 2">
-          <div class="flex items-start gap-2 mb-4">
-            <h2 class="text-2xl font-bold text-primary leading-tight">
-              Портировать MO2 из установленой игры
-            </h2>
-            <!-- Иконка вопроса с подсказкой (Tooltip) -->
-            <div
-              class="relative flex items-center group cursor-help text-secondary hover:text-primary mt-1"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-6 w-6"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              <div
-                class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-800 text-sm text-white px-3 py-1.5 rounded shadow-lg whitespace-nowrap z-50"
-              >
-                Перенос модов и сохранений
-              </div>
-            </div>
-          </div>
-          <div class="flex gap-4 mt-6">
-            <button
-              @click="goToInstall(true)"
-              class="w-full bg-primary text-gray-900 font-bold py-2 rounded hover:bg-opacity-80 transition"
-            >
-              Да
-            </button>
-            <button
-              @click="goToInstall(false)"
-              class="w-full bg-gray-700 text-primary font-bold py-2 rounded hover:bg-opacity-80 transition"
-            >
-              Нет
-            </button>
-          </div>
-          <button
-            @click="installStep = 0"
-            class="mt-4 w-full text-secondary hover:text-primary transition"
-          >
-            Назад
-          </button>
-        </div>
-
         <!-- ШАГ 3: Сама установка -->
         <div v-else-if="installStep === 3">
           <h2 class="text-2xl font-bold text-primary mb-4">Установка игры</h2>
           <div v-if="!isInstalling">
-            <!-- Дополнительный инпут, если выбрали "Да" на портирование -->
-            <div v-if="portMo2" class="mb-4">
-              <label class="block text-secondary mb-1"
-                >Путь к старому modorganizer.exe:</label
-              >
-              <div class="flex">
-                <input
-                  data-gp-ignore
-                  v-model="mo2Path"
-                  class="flex-1 bg-gray-800 text-primary p-2 rounded-l border border-gray-700"
-                  placeholder="Выберите файл..."
-                  readonly
-                />
-                <button
-                  @click="selectMo2Path"
-                  class="bg-primary text-gray-900 px-4 py-2 rounded-r hover:bg-opacity-80 transition font-bold"
-                >
-                  Обзор
-                </button>
-              </div>
-            </div>
-
             <div class="mb-4">
               <label class="block text-secondary mb-1"
                 >Путь к установщику (.exe/.msi):</label
@@ -1046,6 +979,7 @@ onUnmounted(() => {
               @start_game="startGame"
               @open-recovery="showRecoveryModal = true"
               @open-protontricks="openProtontricks"
+              @add-to-steam="addToSteam"
             >
               <Cog class="w-11 text-primary" />
             </DropdownButton>
@@ -1153,6 +1087,13 @@ onUnmounted(() => {
 
 <style lang="scss">
 @use "assets/css/global" as *;
+
+.background {
+  background-image: url("assets/image/bg.webp");
+  background-size: contain;
+  background-position: 215px;
+  background-repeat: no-repeat;
+}
 
 .horizontal-divider {
   background-image: radial-gradient(

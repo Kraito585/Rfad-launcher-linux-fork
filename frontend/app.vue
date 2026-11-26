@@ -18,13 +18,6 @@ useGamepadNav();
 </template>
 
 <style>
-.background {
-  background-image: url("assets/image/bg.webp");
-  background-size: contain;
-  background-position: 215px;
-  background-repeat: no-repeat;
-}
-
 :focus:not(:focus-visible) {
   outline: none;
 }

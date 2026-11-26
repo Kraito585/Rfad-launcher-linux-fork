@@ -35,6 +35,7 @@ onMounted(async () => {
   document.addEventListener("click", handleClickOutside);
   try {
     const data = await App.GetGameSettings();
+    runType.value = await App.GetRunType();
     if (data) {
       const parsed = typeof data === "string" ? JSON.parse(data) : data;
       settings.value = { ...settings.value, ...parsed };
@@ -95,6 +96,17 @@ const sendToBackend = async (key: string, value: boolean | string) => {
     console.log(`[Settings] ${key} сохранено:`, value);
   } catch (e) {
     console.error(`[Settings] Ошибка при сохранении ${key}:`, e);
+  }
+};
+
+const runType = ref("");
+
+const setRunType = async (mode: string) => {
+  runType.value = mode;
+  try {
+    await App.SetRunType(mode);
+  } catch (e) {
+    console.error("[Settings] Ошибка сохранения runType:", e);
   }
 };
 </script>
@@ -322,6 +334,31 @@ const sendToBackend = async (key: string, value: boolean | string) => {
                   ]"
                 >
                   {{ lvl }}%
+                </button>
+              </div>
+            </div>
+            <div class="flex flex-col gap-3">
+              <span class="setting-label">Запуск из Steam</span>
+              <div
+                class="flex bg-block border border-blockBorder rounded-xl p-1 gap-1"
+              >
+                <button
+                  v-for="opt in [
+                    { label: 'Спрашивать', value: '' },
+                    { label: 'Игра', value: 'game' },
+                    { label: 'Лаунчер', value: 'launcher' },
+                    { label: 'MO2', value: 'mo2' },
+                  ]"
+                  :key="opt.value"
+                  @click="setRunType(opt.value)"
+                  :class="[
+                    'flex-1 py-2 rounded-lg font-medium transition-colors text-sm',
+                    runType === opt.value
+                      ? 'bg-primary text-gray-900'
+                      : 'text-secondary hover:text-primary hover:bg-white/5',
+                  ]"
+                >
+                  {{ opt.label }}
                 </button>
               </div>
             </div>

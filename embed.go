@@ -2,7 +2,7 @@ package main
 
 import "embed"
 
-//go:embed embed/start.sh embed/innoextract embed/libs.zip embed/config.json build/appicon.png
+//go:embed embed/start.sh embed/innoextract embed/libs.zip embed/config.json build/appicon.png embed/steam-asets.tar.gz
 var bundledAssets embed.FS
 
 func getStartSh() []byte {
@@ -28,4 +28,9 @@ func getOfflineConfig() []byte {
 func getIcon() []byte {
 	icon, _ := bundledAssets.ReadFile("build/appicon.png")
 	return icon
+}
+
+func getSteamAssets() []byte {
+	steamAssets, _ := bundledAssets.ReadFile("embed/steam-asets.tar.gz")
+	return steamAssets
 }
