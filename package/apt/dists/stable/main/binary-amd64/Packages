@@ -1,17 +1,17 @@
 Package: RFADLauncherLinux
 Architecture: amd64
-Version: 2.3.0-1
+Version: 2.3.1-1
 Priority: extra
 Section: default
 Maintainer:  <>
-Installed-Size: 27878
+Installed-Size: 29578
 Depends: libgtk-4-1, libwebkitgtk-6.0-4
 Filename: pool/main/RFADLauncherLinux.deb
-Size: 15796644
-MD5sum: d4eaecc4e34bda7ede6869728d2de866
-SHA1: e8dc7a3060ea4e4a9792a42660532fe77cf73bfb
-SHA256: 1ce219c017cca38a4cc83b36e1cc9da13bac7df6a74d43ec3bde5aff07d0a8d3
-SHA512: e70eda08fd24496bf4d45b819669af472759eb419d3ae2871d2976c10226ef1d801891ae2b88aab169a05725013af13ca4bf9891b5025f928b210b7d3defbf65
+Size: 17296484
+MD5sum: 17e30dc3e1d177ff8b63b171c54bf75e
+SHA1: e0dfc4ab2a0e566ac50b15b4fd4ce3fbb41423a2
+SHA256: 545abb95a647f8ef3cd90acba62953dac6586fcbbcb48a4da6eefbc0f6dfe8f8
+SHA512: c5b3426813d256711ea62756357b5f392e82490498fcec2764714031f2a1b2bcfd474211f7beda2419a542580b7faaf373e01ef36e13476e827f36f34a07bd9e
 Homepage: https://wails.io
 Description: A RFADLauncherLinux application
 License: MIT
