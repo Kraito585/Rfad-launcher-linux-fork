@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,9 +24,12 @@ import (
 	fsrswitch "rfad-launcher-linux/src-wails/utils/fsr_switch"
 	graficswitch "rfad-launcher-linux/src-wails/utils/grafic_switch"
 	"rfad-launcher-linux/src-wails/utils/steam_drm_switch"
+	"rfad-launcher-linux/src-wails/utils/steam_shortcut"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	application "github.com/wailsapp/wails/v3/pkg/application"
@@ -46,27 +50,49 @@ type GameSettings struct {
 const systemConfigPath = "~/.config/rfad-launcher/launcher.conf"
 
 type App struct {
+	headless      bool
+	gamepadMu     sync.Mutex
+	gamepadCancel context.CancelFunc
 }
 
-func NewApp() *App {
-	return &App{}
+func NewApp(headless bool) *App {
+	return &App{headless: headless}
 }
 
-func (a *App) startup() {
-	slog.Info("App started")
+var _ application.ServiceStartup = (*App)(nil)
+
+func (a *App) startup(ctx context.Context) {
+	slog.Info("App started", "headless", a.headless)
+	if a.headless {
+		return
+	}
+	gpCtx, cancel := context.WithCancel(ctx)
+	a.gamepadMu.Lock()
+	a.gamepadCancel = cancel
+	a.gamepadMu.Unlock()
+	go startGamepadMonitor(gpCtx)
 }
 
 func (a *App) shutdown() {
 	slog.Info("App shutting down")
+	a.stopGamepadMonitor()
 }
 
-// ServiceStartup вызывается Wails при старте приложения.
-func (a *App) ServiceStartup(options application.ServiceOptions) error {
-	a.startup()
+func (a *App) stopGamepadMonitor() {
+	a.gamepadMu.Lock()
+	cancel := a.gamepadCancel
+	a.gamepadCancel = nil
+	a.gamepadMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
+	a.startup(ctx)
 	return nil
 }
 
-// ServiceShutdown вызывается Wails при завершении приложения.
 func (a *App) ServiceShutdown() error {
 	a.shutdown()
 	return nil
@@ -1140,5 +1166,153 @@ func (a *App) RunMigrations() error {
 
 	application.Get().Event.Emit("update-status", map[string]string{"status": "unpack-finished"})
 	slog.Info("Миграции успешно завершены")
+	return nil
+}
+
+func (a *App) AddToSteam() error {
+	slog.Info("AddToSteam called")
+
+	icon := getIcon()
+	if len(icon) == 0 {
+		icon = appIcon
+	}
+
+	count, err := steam_shortcut.AddLauncherToSteam(steam_shortcut.Options{
+		AppName:       "RFAD SE",
+		LaunchOptions: "--steam",
+		SteamAssets:   getSteamAssets(),
+		IconBytes:     icon,
+	})
+	if err != nil {
+		slog.Error("Не удалось добавить ярлык в Steam", "error", err)
+		a.ShowMessageDialog("Ошибка Steam", fmt.Sprintf("Не удалось добавить ярлык в Steam: %v", err))
+		return err
+	}
+
+	slog.Info("Ярлык RFAD SE успешно добавлен в Steam", "profiles", count)
+	a.ShowMessageDialog("Steam", "RFAD SE добавлен в Steam. Перезапустите клиент Steam, чтобы ярлык и обложки появились в библиотеке.")
+	return nil
+}
+
+func createMainWindow(app *application.App) {
+	app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:             "main",
+		Title:            "RFAD Launcher",
+		Width:            1240,
+		Height:           800,
+		Frameless:        true,
+		BackgroundColour: application.NewRGBA(0, 0, 0, 0),
+		URL:              "/",
+	})
+}
+
+func createPickerWindow(app *application.App) {
+	app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:             "picker",
+		Title:            "RFAD SE — Выбор запуска",
+		Width:            460,
+		Height:           430,
+		Frameless:        true,
+		BackgroundColour: application.NewRGBA(0, 0, 0, 0),
+		URL:              "/#/launch-picker",
+	})
+}
+
+func runSilentAndQuit(app *application.App, exitCode *atomic.Int32, fn func() error) {
+	var finishOnce sync.Once
+	finish := func(code int32) {
+		finishOnce.Do(func() {
+			if exitCode != nil {
+				exitCode.Store(code)
+			}
+			app.Quit()
+		})
+	}
+
+	app.Event.On("game-exit", func(_ *application.CustomEvent) {
+		slog.Info("Процесс игры завершился, закрываем фоновый лаунчер")
+		finish(0)
+	})
+
+	app.Event.On("game-error", func(e *application.CustomEvent) {
+		slog.Error("Процесс игры завершился с ошибкой", "data", e.Data)
+		finish(1)
+	})
+
+	app.Event.On("gamescope-missing", func(_ *application.CustomEvent) {
+		slog.Error("Запрошен Gamescope, но он не найден в системе")
+	})
+
+	go func() {
+		if err := fn(); err != nil {
+			slog.Error("Ошибка при тихом запуске", "error", err)
+			finish(1)
+		}
+	}()
+}
+
+func normalizeRunType(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "game", "mo2", "launcher":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return ""
+	}
+}
+
+func (a *App) GetRunType() string {
+	val, err := utils.GetOneSetting("run-type")
+	if err != nil {
+		return ""
+	}
+	return normalizeRunType(val)
+}
+
+func (a *App) SetRunType(mode string) error {
+	return utils.SetOneSetting("run-type", normalizeRunType(mode))
+}
+
+func (a *App) SelectLaunchMode(mode string, remember bool) error {
+	mode = normalizeRunType(mode)
+	if mode == "" {
+		return fmt.Errorf("неизвестный режим запуска")
+	}
+
+	slog.Info("Выбран режим запуска из окна пикера", "mode", mode, "remember", remember)
+
+	if remember {
+		if err := utils.SetOneSetting("run-type", mode); err != nil {
+			slog.Warn("Не удалось сохранить run-type в конфиг", "err", err)
+		}
+	}
+
+	app := application.Get()
+
+	switch mode {
+	case "launcher":
+		// Сначала открываем главное окно, затем закрываем пикер, чтобы GTK не завершил процесс
+		createMainWindow(app)
+		if w, ok := app.Window.GetByName("picker"); ok {
+			w.Close()
+		}
+		return nil
+
+	case "game":
+		a.stopGamepadMonitor()
+		if w, ok := app.Window.GetByName("picker"); ok {
+			w.Hide()
+		}
+		runSilentAndQuit(app, nil, a.StartGame)
+		return nil
+
+	case "mo2":
+		a.stopGamepadMonitor()
+		if w, ok := app.Window.GetByName("picker"); ok {
+			w.Hide()
+		}
+		runSilentAndQuit(app, nil, a.OpenMO2)
+		return nil
+	}
+
 	return nil
 }

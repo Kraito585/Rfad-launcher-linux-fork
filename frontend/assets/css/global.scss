@@ -4,6 +4,10 @@
 @tailwind components;
 @tailwind utilities;
 
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
 .border-1 {
   border-width: 1px;
 }
@@ -12,10 +16,10 @@
   @apply select-none;
 }
 
-
-html, body {
-  -webkit-font-smoothing:antialiased;
-  -webkit-backface-visibility:hidden;
+html,
+body {
+  -webkit-font-smoothing: antialiased;
+  -webkit-backface-visibility: hidden;
   -moz-osx-font-smoothing: grayscale;
 }
 
@@ -47,12 +51,41 @@ html, body {
 }
 
 @mixin mask-image($deg, $start, $end) {
-  -webkit-mask-image: linear-gradient($deg, transparent 0%, transparent $start, black $end);
-  mask-image: linear-gradient($deg, transparent 0%, transparent $start, black $end);
+  -webkit-mask-image: linear-gradient(
+    $deg,
+    transparent 0%,
+    transparent $start,
+    black $end
+  );
+  mask-image: linear-gradient(
+    $deg,
+    transparent 0%,
+    transparent $start,
+    black $end
+  );
 }
 
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+html.gamepad-mode {
+  cursor: none;
+
+  button:focus,
+  a:focus,
+  input:focus,
+  select:focus,
+  textarea:focus,
+  [data-gp-focusable]:focus,
+  [tabindex]:focus {
+    outline: 2px solid #f59e0b !important; // подстройте цвет под акцент лаунчера
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.28);
+    transition:
+      outline-color 0.12s ease,
+      box-shadow 0.12s ease;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -69,7 +102,9 @@ html, body {
   .fade-enter-active,
   .fade-leave-active,
   .fade-move {
-    transition: opacity 0.3s, transform 0.3s;
+    transition:
+      opacity 0.3s,
+      transform 0.3s;
   }
   .fade-leave-active {
     position: absolute;

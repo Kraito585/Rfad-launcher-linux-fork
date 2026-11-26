@@ -12,9 +12,11 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 //go:embed all:frontend/dist
@@ -53,32 +55,25 @@ func getHostConfigDir() string {
 }
 
 func setupLogging(fileName string) (*os.File, string) {
-	configDir := getHostConfigDir() // Убедитесь, что эта функция использует os.UserConfigDir(), а не Wails API
+	configDir := getHostConfigDir()
 
 	appDir := filepath.Join(configDir, "rfad-launcher")
 	os.MkdirAll(appDir, 0755)
 
 	logPath := filepath.Join(appDir, fileName)
 
-	// Умная генерация имени для бэкапа (например: "task.log" -> "task-prev.log")
 	ext := filepath.Ext(fileName)
 	base := strings.TrimSuffix(fileName, ext)
 	prevLogPath := filepath.Join(appDir, base+"-prev"+ext)
 
-	// Бэкап старого лога (если существует)
 	if _, err := os.Stat(logPath); err == nil {
 		os.Rename(logPath, prevLogPath)
 	}
 
 	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
 	if err == nil {
-		// 1. Направляем стандартный логгер Go в файл
 		log.SetOutput(file)
-
-		// 2. Направляем slog в файл (чтобы slog.Info тоже писало туда)
 		slog.SetDefault(slog.New(slog.NewTextHandler(file, nil)))
-
-		// 3. Жесткий перехват stdout (1) и stderr (2) на уровне ОС
 		syscall.Dup2(int(file.Fd()), 1)
 		syscall.Dup2(int(file.Fd()), 2)
 	}
@@ -94,12 +89,10 @@ func captureLogTail(mainLogName, targetLogName string) func() {
 	targetLogPath := filepath.Join(appDir, targetLogName)
 
 	var startOffset int64 = 0
-	// Узнаем, сколько байт сейчас в главном логе
 	if info, err := os.Stat(mainLogPath); err == nil {
 		startOffset = info.Size()
 	}
 
-	// Возвращаем функцию финализации
 	return func() {
 		srcFile, err := os.Open(mainLogPath)
 		if err != nil {
@@ -107,7 +100,6 @@ func captureLogTail(mainLogName, targetLogName string) func() {
 		}
 		defer srcFile.Close()
 
-		// Прыгаем на ту позицию, где лог был до запуска нашей задачи
 		srcFile.Seek(startOffset, io.SeekStart)
 
 		dstFile, err := os.OpenFile(targetLogPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
@@ -116,20 +108,47 @@ func captureLogTail(mainLogName, targetLogName string) func() {
 		}
 		defer dstFile.Close()
 
-		// Копируем весь новый текст в целевой файл
 		io.Copy(dstFile, srcFile)
 	}
 }
 
 var cliHelp = `
   -v, --version    Показать версию лаунчера
-  --run-game       Тихий запуск игры без UI (не работает)
+  --run-game       Тихий запуск игры без окна лаунчера
+  --steam          Умный запуск из Steam (миграции, выбор режима / run-type)
   -h, --help       Показать это сообщение`
+
+func resolveStartupMode(a *App, runGame, steam bool) string {
+	if runGame {
+		return "headless-game"
+	}
+	if !steam {
+		return "main"
+	}
+
+	// Если путь не настроен, не завершена первичная установка или нужна миграция — открываем полный лаунчер
+	if GetGameRoot() == "" || !a.IsPathExist() || a.GetFirstInstallStatus() || a.GetMigrationStatus() {
+		slog.Info("Режим --steam: требуется настройка или миграция, открываем основной лаунчер")
+		return "main"
+	}
+
+	switch a.GetRunType() {
+	case "game":
+		return "headless-game"
+	case "mo2":
+		return "headless-mo2"
+	case "launcher":
+		return "main"
+	default:
+		return "picker"
+	}
+}
 
 func main() {
 	versionFlag := flag.Bool("v", false, "Показать версию")
 	versionFlagLong := flag.Bool("version", false, "Показать версию")
 	runGameFlag := flag.Bool("run-game", false, "Тихий запуск игры без UI")
+	steamFlag := flag.Bool("steam", false, "Умный запуск из Steam")
 	helpFlag := flag.Bool("h", false, "Показать справку")
 	helpFlagLong := flag.Bool("help", false, "Показать справку")
 
@@ -149,73 +168,97 @@ func main() {
 		os.Exit(0)
 	}
 
-	if *runGameFlag {
-		slog.Info("Инициирован тихий запуск игры через CLI флаг")
-		logFile, _ := setupLogging("cli-run.log")
+	probeApp := NewApp(true)
+	startupMode := resolveStartupMode(probeApp, *runGameFlag, *steamFlag)
+	isHeadless := startupMode == "headless-game" || startupMode == "headless-mo2"
+
+	logFileName := "launcher.log"
+	if isHeadless {
+		logFileName = "cli-run.log"
+	}
+
+	logFile, logPath := setupLogging(logFileName)
+	closeLog := func() {
 		if logFile != nil {
-			defer logFile.Close()
+			_ = logFile.Close()
 		}
-
-		myApp := &App{}
-		err := myApp.StartGame()
-		if err != nil {
-			slog.Error("Критическая ошибка при тихом запуске", "error", err)
-			os.Exit(1)
-		}
-
-		slog.Info("Тихий запуск успешно выполнен, завершение процесса лаунчера")
-		os.Exit(0)
 	}
+	defer closeLog()
 
-	logFile, logPath := setupLogging("launcher.log")
-	if logFile != nil {
-		defer logFile.Close()
-	}
-
-	log.Println("=== ЗАПУСК RFAD LAUNCHER ===")
+	log.Printf("=== ЗАПУСК RFAD LAUNCHER (mode=%s) ===\n", startupMode)
 
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("КРИТИЧЕСКАЯ ОШИБКА (PANIC): %v\n", r)
 			log.Printf("Stack Trace:\n%s", debug.Stack())
-			exec.Command("xdg-open", logPath).Start()
+			if !isHeadless {
+				exec.Command("xdg-open", logPath).Start()
+			}
+			closeLog()
 			os.Exit(1)
 		}
 	}()
 
-	appInstance := NewApp()
+	appInstance := NewApp(isHeadless)
 
-	app := application.New(application.Options{
+	opts := application.Options{
 		Name:        "RFAD Launcher",
 		Description: "Launcher for RFAD SE",
 		Icon:        appIcon,
-		Assets: application.AssetOptions{
-			Handler: application.AssetFileServerFS(assets),
-		},
 		Services: []application.Service{
 			application.NewService(appInstance),
 		},
 		Mac: application.MacOptions{
-			ApplicationShouldTerminateAfterLastWindowClosed: true,
+			ApplicationShouldTerminateAfterLastWindowClosed: !isHeadless,
 		},
-	})
+	}
 
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:             "main",
-		Title:            "RFAD Launcher",
-		Width:            1240,
-		Height:           768,
-		Frameless:        true,
-		BackgroundColour: application.NewRGBA(0, 0, 0, 0),
-	})
+	// В тихом режиме не поднимаем даже сервер фронтенд-ассетов
+	if !isHeadless {
+		opts.Assets = application.AssetOptions{
+			Handler: application.AssetFileServerFS(assets),
+		}
+	}
 
-	// Запускаем приложение
-	err := app.Run()
-	if err != nil {
+	app := application.New(opts)
+	var exitCode atomic.Int32
+
+	switch startupMode {
+	case "headless-game", "headless-mo2":
+		app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(_ *application.ApplicationEvent) {
+			if GetGameRoot() == "" || !appInstance.IsPathExist() || appInstance.GetFirstInstallStatus() || appInstance.GetMigrationStatus() {
+				slog.Error("Игра не готова к тихому запуску — сначала запустите лаунчер с UI")
+				exitCode.Store(1)
+				app.Quit()
+				return
+			}
+
+			launchFn := appInstance.StartGame
+			if startupMode == "headless-mo2" {
+				launchFn = appInstance.OpenMO2
+			}
+			runSilentAndQuit(app, &exitCode, launchFn)
+		})
+
+	case "picker":
+		createPickerWindow(app)
+
+	default:
+		createMainWindow(app)
+	}
+
+	if err := app.Run(); err != nil {
 		log.Printf("ОШИБКА ЗАПУСКА WAILS: %v\n", err)
-		exec.Command("xdg-open", logPath).Start()
-		log.Fatal(err)
+		if !isHeadless {
+			exec.Command("xdg-open", logPath).Start()
+		}
+		closeLog()
+		os.Exit(1)
 	}
 
 	log.Println("=== ПРИЛОЖЕНИЕ ЗАКРЫТО ШТАТНО ===")
+	if code := int(exitCode.Load()); code != 0 {
+		closeLog()
+		os.Exit(code)
+	}
 }

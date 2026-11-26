@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, nextTick, onMounted, onUnmounted } from "vue";
 // ИСПРАВЛЕНИЕ: Импортируем все функции как модуль App, точно так же, как в index.vue
 import * as App from "~/bindings/rfad-launcher-linux/app";
 import MessageBox from "~/components/base/MessageBox.vue";
@@ -10,6 +10,7 @@ const emit = defineEmits<{
   (e: "close"): void;
 }>();
 
+const rootRef = ref<HTMLElement | null>(null);
 const modalRef = ref<HTMLElement | null>(null);
 const isLoading = ref(true);
 
@@ -34,6 +35,7 @@ onMounted(async () => {
   document.addEventListener("click", handleClickOutside);
   try {
     const data = await App.GetGameSettings();
+    runType.value = await App.GetRunType();
     if (data) {
       const parsed = typeof data === "string" ? JSON.parse(data) : data;
       settings.value = { ...settings.value, ...parsed };
@@ -42,6 +44,10 @@ onMounted(async () => {
     console.error("Ошибка загрузки настроек:", e);
   } finally {
     isLoading.value = false;
+    await nextTick();
+    if (document.documentElement.classList.contains("gamepad-mode")) {
+      rootRef.value?.querySelector<HTMLElement>("[data-gp-autofocus]")?.focus();
+    }
   }
 });
 
@@ -92,10 +98,22 @@ const sendToBackend = async (key: string, value: boolean | string) => {
     console.error(`[Settings] Ошибка при сохранении ${key}:`, e);
   }
 };
+
+const runType = ref("");
+
+const setRunType = async (mode: string) => {
+  runType.value = mode;
+  try {
+    await App.SetRunType(mode);
+  } catch (e) {
+    console.error("[Settings] Ошибка сохранения runType:", e);
+  }
+};
 </script>
 
 <template>
   <div
+    ref="rootRef"
     class="fixed inset-0 z-[100000] bg-black/70 backdrop-blur-sm flex items-center justify-center px-4"
   >
     <MessageBox ref="modalRef" class="w-full max-w-2xl">
@@ -115,7 +133,8 @@ const sendToBackend = async (key: string, value: boolean | string) => {
           </div>
           <button
             type="button"
-            class="text-secondary hover:text-primary transition-colors p-1"
+            data-gp-close
+            class="text-secondary hover:text-primary transition-colors p-1.5 rounded-full flex items-center justify-center"
             @click="emit('close')"
           >
             <CloseIcon class="w-6 h-6" />
@@ -135,6 +154,7 @@ const sendToBackend = async (key: string, value: boolean | string) => {
             <div class="setting-row">
               <span class="setting-label">MangoHud</span>
               <button
+                data-gp-autofocus
                 @click="toggleSetting('mangoHud')"
                 :class="[
                   'toggle-btn',
@@ -314,6 +334,31 @@ const sendToBackend = async (key: string, value: boolean | string) => {
                   ]"
                 >
                   {{ lvl }}%
+                </button>
+              </div>
+            </div>
+            <div class="flex flex-col gap-3">
+              <span class="setting-label">Запуск из Steam</span>
+              <div
+                class="flex bg-block border border-blockBorder rounded-xl p-1 gap-1"
+              >
+                <button
+                  v-for="opt in [
+                    { label: 'Спрашивать', value: '' },
+                    { label: 'Игра', value: 'game' },
+                    { label: 'Лаунчер', value: 'launcher' },
+                    { label: 'MO2', value: 'mo2' },
+                  ]"
+                  :key="opt.value"
+                  @click="setRunType(opt.value)"
+                  :class="[
+                    'flex-1 py-2 rounded-lg font-medium transition-colors text-sm',
+                    runType === opt.value
+                      ? 'bg-primary text-gray-900'
+                      : 'text-secondary hover:text-primary hover:bg-white/5',
+                  ]"
+                >
+                  {{ opt.label }}
                 </button>
               </div>
             </div>
